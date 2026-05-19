@@ -17,6 +17,7 @@ const SHEET_TURNOS         = 'turnos';
 const SHEET_MOVS           = 'movimientos';
 const SHEET_PROV_CAJA      = 'proveedores_caja';
 const SHEET_CATS_CAJA      = 'categorias_caja';
+const SHEET_CIERRES        = 'cierres_turno';
 
 // ── Lista unificada de empleados (todos los módulos) ──────────
 const SHEET_EMPLEADOS      = 'empleados';
@@ -67,6 +68,7 @@ function doGet(e) {
     else if (action === 'getMovimientos')  result = getMovimientos(params);
     else if (action === 'getProvCaja')     result = getProvCaja();
     else if (action === 'getCatsCaja')     result = getCatsCaja();
+    else if (action === 'getCierresTurno') result = getCierresTurno(params);
     // ── Empleados unificados (todos los módulos) ─────────────
     else if (action === 'getEmpleados')         result = getEmpleados();
     // ── Módulo Propinas ───────────────────────────────────────
@@ -114,6 +116,7 @@ function doPost(e) {
     else if (action === 'deleteProvCaja')  result = deleteProvCaja(params.id);
     else if (action === 'saveCatCaja')     result = saveCatCaja(params.data);
     else if (action === 'deleteCatCaja')   result = deleteCatCaja(params.id);
+    else if (action === 'saveCierreTurno') result = saveCierreTurno(params.data);
     // ── Empleados unificados (todos los módulos) ─────────────
     else if (action === 'saveEmpleado')              result = saveEmpleado(params.data);
     else if (action === 'deleteEmpleado')            result = deleteEmpleado(params.id);
@@ -275,6 +278,12 @@ function initSheets() {
     ];
     const rows = defaults.map((d,i) => [String(i+1), d[0], d[1], true]);
     s.getRange(2, 1, rows.length, 4).setValues(rows);
+  }
+
+  if (!ss.getSheetByName(SHEET_CIERRES)) {
+    const s = ss.insertSheet(SHEET_CIERRES);
+    s.getRange(1,1,1,4).setValues([['id','fecha','tipo','data']]);
+    s.setFrozenRows(1);
   }
 }
 
@@ -852,8 +861,43 @@ function deleteCatCaja(id) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// MÓDULO PROPINAS: EMPLEADOS
 // ══════════════════════════════════════════════════════════════
+// CIERRES DE TURNO (Módulo Caja)
+// ══════════════════════════════════════════════════════════════
+function getCierresTurno(params) {
+  initSheets();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_CIERRES);
+  const rows  = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return { ok:true, cierres:[] };
+  const from = params?.from || '';
+  const to   = params?.to   || '';
+  const cierres = [];
+  for (let i = 1; i < rows.length; i++) {
+    const fecha = String(rows[i][1]);
+    if (from && fecha < from) continue;
+    if (to   && fecha > to)   continue;
+    const data = tryParse(rows[i][3], {});
+    cierres.push({ id: String(rows[i][0]), fecha, tipo: rows[i][2], ...data });
+  }
+  return { ok:true, cierres };
+}
+
+function saveCierreTurno(dataStr) {
+  initSheets();
+  const data  = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_CIERRES);
+  const id    = data.id || ('ct_' + Date.now());
+  const rows  = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(id)) {
+      sheet.getRange(i+1, 1, 1, 4).setValues([[id, data.fecha, data.tipo, JSON.stringify(data)]]);
+      return { ok:true, action:'updated', id };
+    }
+  }
+  sheet.appendRow([id, data.fecha, data.tipo, JSON.stringify(data)]);
+  return { ok:true, action:'inserted', id };
+}
+
 // ══════════════════════════════════════════════════════════════
 // EMPLEADOS — lista unificada (Dashboard · Caja · Propinas)
 // ══════════════════════════════════════════════════════════════
