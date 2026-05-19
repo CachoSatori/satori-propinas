@@ -206,6 +206,47 @@ header {
 }
 .btn-asignar:hover { background:#b8941e; }
 
+/* ── COBERTURA ── */
+.badge-cob {
+  display:inline-block; padding:2px 6px; border-radius:2px;
+  background:#fff8ec; border:1px solid var(--gold); color:#8b6a10;
+  font-size:7px; letter-spacing:.15em; text-transform:uppercase; font-weight:700;
+  vertical-align:middle; margin-left:6px;
+}
+.emp-row.cobertura .emp-label-col { background:#fffbf2; border-right-color:#e8d080; }
+.emp-row.cobertura.worked .emp-label-col { background:#fff3dc; }
+.btn-cob {
+  width:100%; padding:7px; border:1px dashed #c8a96e80; background:none;
+  font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.1em;
+  text-transform:uppercase; color:#8b6a10; cursor:pointer; border-radius:2px;
+  transition:all .15s; margin-bottom:20px;
+}
+.btn-cob:hover { border-color:var(--gold); color:var(--gold); background:#fff8ec88; }
+.cob-picker-row {
+  display:flex; align-items:center; gap:8px; padding:10px 14px;
+  background:#fffbf2; border-top:1px dashed #e8d080;
+}
+.cob-picker-select {
+  flex:1; border:1px solid var(--gold); padding:7px 10px;
+  font-family:'DM Mono',monospace; font-size:10px; background:#fff8ec;
+  border-radius:2px; outline:none; color:var(--ink);
+}
+.btn-cob-confirm {
+  padding:7px 14px; background:var(--gold); color:#fff; border:none;
+  font-family:'DM Mono',monospace; font-size:8px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; cursor:pointer; border-radius:2px; white-space:nowrap;
+}
+.btn-cob-confirm:hover { background:#b8941e; }
+.btn-cob-cancel {
+  padding:7px 10px; background:none; border:1px solid #ccc; color:#888;
+  font-family:'DM Mono',monospace; font-size:11px; cursor:pointer; border-radius:2px;
+}
+.btn-cob-remove {
+  background:none; border:none; color:#c8a96e; font-size:15px; cursor:pointer;
+  padding:2px 6px; line-height:1; opacity:.5; margin-left:auto;
+}
+.btn-cob-remove:hover { opacity:1; color:var(--red); }
+
 /* ── POOL TOTALS BAR ── */
 .pool-bar {
   background:var(--ink); border-radius:2px; padding:16px 20px;
@@ -640,7 +681,8 @@ let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
 let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
 
 // Draft del turno en curso
-let DRAFT = { fecha:'', turno:'PM', lineas:[] };
+let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[] };
+let _cobPickerRol = null;
 
 // Turno seleccionado en modal detail
 let TURNO_DETAIL_ID = null;
@@ -881,7 +923,7 @@ function renderTurno() {
 
   const container = document.getElementById('turno-sections');
 
-  // Sync draft lineas: add new employees, keep existing values
+  // Sync draft lineas
   activos.forEach(emp => {
     if (!DRAFT.lineas.find(l => l.id === emp.id)) {
       DRAFT.lineas.push({
@@ -891,12 +933,11 @@ function renderTurno() {
       });
     }
   });
-  // Remove from draft employees no longer active
   DRAFT.lineas = DRAFT.lineas.filter(l => activos.find(e => e.id === l.id));
+  // Remove coberturas for employees no longer active
+  DRAFT.coberturas = DRAFT.coberturas.filter(c => activos.find(e => e.id === c.empId));
 
-  // Employees with no valid rol → ASIGNAR section
   const sinRol = activos.filter(e => !ROL_ORDER.includes(e.rol));
-
   let html = '';
 
   if (sinRol.length) {
@@ -919,15 +960,20 @@ function renderTurno() {
   }
 
   ROL_ORDER.forEach(rol => {
-    const emps = activos.filter(e => e.rol === rol);
-    if (!emps.length) return;
-    const pts = getRolPts(rol);
+    const emps       = activos.filter(e => e.rol === rol);
+    const cobsForRol = DRAFT.coberturas.filter(c => c.rol_cobertura === rol);
+    const pts        = getRolPts(rol);
+    // Show section if has primary employees, coberturas, or picker open
+    if (!emps.length && !cobsForRol.length && _cobPickerRol !== rol) return;
+
     html += `
       <div class="emp-section">
         <div class="sl">${ROL_NAMES[rol]} <span class="sl-pts">${pts} pts/hora</span></div>
         <div class="emp-rows">`;
+
+    // Filas regulares
     emps.forEach(emp => {
-      const l = DRAFT.lineas.find(x => x.id === emp.id) || {};
+      const l   = DRAFT.lineas.find(x => x.id === emp.id) || {};
       const chk = l.activo ? 'checked' : '';
       html += `
         <div class="emp-row${l.activo ? ' worked' : ''}" id="erow-${emp.id}">
@@ -965,7 +1011,67 @@ function renderTurno() {
           </div>
         </div>`;
     });
-    html += `</div></div>`;
+
+    // Filas de cobertura
+    cobsForRol.forEach(c => {
+      const chk = c.activo ? 'checked' : '';
+      html += `
+        <div class="emp-row cobertura${c.activo ? ' worked' : ''}" id="erow-cob-${c.vId}">
+          <div class="emp-label-col" onclick="document.getElementById('echk-cob-${c.vId}').click()" style="cursor:pointer">
+            <input type="checkbox" class="emp-chk" id="echk-cob-${c.vId}"
+              ${chk} onchange="toggleCob('${c.vId}')" onclick="event.stopPropagation()">
+            <span class="emp-nombre">${c.nombre}<span class="badge-cob">COB</span></span>
+            <button class="btn-cob-remove" onclick="event.stopPropagation();removeCob('${c.vId}')" title="Quitar cobertura">×</button>
+          </div>
+          <div class="emp-fields-col${c.activo ? '' : ' emp-inactive'}">
+            <div>
+              <div class="emp-field-label">Horas</div>
+              <input type="number" class="emp-input-sm" id="ehrs-cob-${c.vId}"
+                value="${c.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                oninput="onHrsCob('${c.vId}')">
+            </div>
+            <div>
+              <div class="emp-field-label">Propinas (₡)</div>
+              <div class="emp-tips-wrap">
+                <span class="emp-tips-prefix">₡</span>
+                <input type="number" class="emp-input-tips" id="etips-cob-${c.vId}"
+                  value="${c.propina_gen}" placeholder="0" step="100" min="0"
+                  oninput="onTipsCob('${c.vId}')">
+              </div>
+            </div>
+            <div>
+              <div class="emp-field-label">Puntos</div>
+              <div class="emp-pts-badge" id="epv-cob-${c.vId}">${c.pts_val ? fmtNum(c.pts_val) : '—'}</div>
+            </div>
+            <div>
+              <div class="emp-field-label">Take Home</div>
+              <div class="emp-take-badge${c.take_home ? '' : ' zero'}" id="eth-cob-${c.vId}">
+                ${c.take_home ? fmtCRC(c.take_home) : '₡ —'}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    // Picker de cobertura inline
+    if (_cobPickerRol === rol) {
+      const available = activos.filter(e =>
+        e.rol !== rol &&
+        !cobsForRol.find(c => c.empId === e.id)
+      );
+      html += `<div class="cob-picker-row">
+        <select class="cob-picker-select" id="cob-select-${rol}">
+          <option value="">— Seleccionar empleado —</option>
+          ${available.map(e => `<option value="${e.id}">${e.nombre} · ${ROL_NAMES[e.rol]||e.rol}</option>`).join('')}
+        </select>
+        <button class="btn-cob-confirm" onclick="confirmCobertura('${rol}')">Agregar</button>
+        <button class="btn-cob-cancel" onclick="cancelCobertura()">✕</button>
+      </div>`;
+    }
+
+    html += `</div>
+      <button class="btn-cob" onclick="openCobPicker('${rol}')">＋ Agregar cobertura</button>
+    </div>`;
   });
 
   if (!activos.length) {
@@ -1051,40 +1157,94 @@ function onTipsChange(id) {
   calcTurno();
 }
 
+// ── Cobertura ─────────────────────────────────────────────────
+function openCobPicker(rol) {
+  _cobPickerRol = _cobPickerRol === rol ? null : rol;
+  renderTurno();
+}
+function cancelCobertura() {
+  _cobPickerRol = null;
+  renderTurno();
+}
+function confirmCobertura(rol) {
+  const sel   = document.getElementById('cob-select-' + rol);
+  const empId = sel?.value;
+  if (!empId) { toast('Seleccioná un empleado', 'error'); return; }
+  const emp = EMPLEADOS.find(e => e.id === empId);
+  if (!emp) return;
+  const vId = empId + '__' + rol;
+  if (DRAFT.coberturas.find(c => c.vId === vId)) return;
+  DRAFT.coberturas.push({
+    vId, empId, nombre: emp.nombre, rol_original: emp.rol, rol_cobertura: rol,
+    activo: false, horas: '', propina_gen: '', pts_val: 0, take_home: 0
+  });
+  _cobPickerRol = null;
+  renderTurno();
+}
+function removeCob(vId) {
+  DRAFT.coberturas = DRAFT.coberturas.filter(c => c.vId !== vId);
+  renderTurno();
+}
+function toggleCob(vId) {
+  const c = DRAFT.coberturas.find(x => x.vId === vId);
+  if (!c) return;
+  c.activo = document.getElementById('echk-cob-' + vId).checked;
+  const row    = document.getElementById('erow-cob-' + vId);
+  const fields = row.querySelector('.emp-fields-col');
+  row.classList.toggle('worked', c.activo);
+  if (c.activo) fields.classList.remove('emp-inactive');
+  else { fields.classList.add('emp-inactive'); c.horas=''; c.propina_gen=''; }
+  calcTurno();
+}
+function onHrsCob(vId) {
+  const c = DRAFT.coberturas.find(x => x.vId === vId);
+  if (c) c.horas = parseFloat(document.getElementById('ehrs-cob-' + vId).value) || '';
+  calcTurno();
+}
+function onTipsCob(vId) {
+  const c = DRAFT.coberturas.find(x => x.vId === vId);
+  if (c) c.propina_gen = parseFloat(document.getElementById('etips-cob-' + vId).value) || '';
+  calcTurno();
+}
+
 // ── Cálculo principal ─────────────────────────────────────────
 function calcTurno() {
-  const worked = DRAFT.lineas.filter(l => l.activo);
+  const worked    = DRAFT.lineas.filter(l => l.activo);
+  const workedCob = DRAFT.coberturas.filter(c => c.activo);
 
-  // Pool = suma de propinas generadas
-  const pool = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  // Pool = suma propinas generadas (regulares + coberturas)
+  const pool = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
 
-  // Points per person
+  // Puntos — cobertura usa pts del rol que cubre
   worked.forEach(l => {
-    const hrs = parseFloat(l.horas) || 0;
-    const pts = getRolPts(l.rol);
-    l.pts_val = hrs * pts;
+    l.pts_val = (parseFloat(l.horas) || 0) * getRolPts(l.rol);
+  });
+  workedCob.forEach(c => {
+    c.pts_val = (parseFloat(c.horas) || 0) * getRolPts(c.rol_cobertura);
   });
 
-  const totalPts = worked.reduce((s, l) => s + l.pts_val, 0);
-  const rate = totalPts > 0 ? pool / totalPts : 0;
+  const totalPts = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
+  const rate     = totalPts > 0 ? pool / totalPts : 0;
 
-  // Take home per person
-  worked.forEach(l => {
-    l.take_home = l.pts_val * rate;
-  });
+  worked.forEach(l    => { l.take_home = l.pts_val * rate; });
+  workedCob.forEach(c => { c.take_home = c.pts_val * rate; });
 
-  // Update DOM
+  // DOM — regulares
   worked.forEach(l => {
     const pvEl = document.getElementById('epv-' + l.id);
     const thEl = document.getElementById('eth-' + l.id);
     if (pvEl) pvEl.textContent = l.pts_val > 0 ? fmtNum(l.pts_val) : '—';
-    if (thEl) {
-      thEl.textContent = l.take_home > 0 ? fmtCRC(l.take_home) : '₡ —';
-      thEl.classList.toggle('zero', !l.take_home);
-    }
+    if (thEl) { thEl.textContent = l.take_home > 0 ? fmtCRC(l.take_home) : '₡ —'; thEl.classList.toggle('zero', !l.take_home); }
+  });
+  // DOM — coberturas
+  workedCob.forEach(c => {
+    const pvEl = document.getElementById('epv-cob-' + c.vId);
+    const thEl = document.getElementById('eth-cob-' + c.vId);
+    if (pvEl) pvEl.textContent = c.pts_val > 0 ? fmtNum(c.pts_val) : '—';
+    if (thEl) { thEl.textContent = c.take_home > 0 ? fmtCRC(c.take_home) : '₡ —'; thEl.classList.toggle('zero', !c.take_home); }
   });
 
-  const dist = worked.reduce((s, l) => s + l.take_home, 0);
+  const dist = [...worked, ...workedCob].reduce((s, l) => s + l.take_home, 0);
   document.getElementById('pool-total').textContent = fmtCRC(pool);
   document.getElementById('pool-pts').textContent   = totalPts > 0 ? fmtNum(totalPts) : '0';
   document.getElementById('pool-rate').textContent  = rate > 0 ? fmtCRC(rate) : '₡ —';
@@ -1128,13 +1288,15 @@ function updateTurnoMeta() {
 
 // ── Guardar turno ─────────────────────────────────────────────
 async function saveTurno() {
-  const worked = DRAFT.lineas.filter(l => l.activo);
-  if (!worked.length) { toast('Marcá quién trabajó primero', 'error'); return; }
+  const worked    = DRAFT.lineas.filter(l => l.activo);
+  const workedCob = DRAFT.coberturas.filter(c => c.activo);
+  if (!worked.length && !workedCob.length) { toast('Marcá quién trabajó primero', 'error'); return; }
 
   calcTurno();
 
-  const pool     = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
-  const totalPts = worked.reduce((s, l) => s + l.pts_val, 0);
+  const allWorked = [...worked, ...workedCob];
+  const pool     = allWorked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const totalPts = allWorked.reduce((s, l) => s + l.pts_val, 0);
   const rate     = totalPts > 0 ? pool / totalPts : 0;
 
   const datos = {
@@ -1142,12 +1304,21 @@ async function saveTurno() {
     pool_total: pool,
     total_pts_val: totalPts,
     point_rate: rate,
-    lineas: worked.map(l => ({
-      id: l.id, nombre: l.nombre, rol: l.rol,
-      horas: parseFloat(l.horas) || 0,
-      propina_gen: parseFloat(l.propina_gen) || 0,
-      pts_rol: getRolPts(l.rol), pts_val: l.pts_val, take_home: l.take_home
-    }))
+    lineas: [
+      ...worked.map(l => ({
+        id: l.id, nombre: l.nombre, rol: l.rol,
+        horas: parseFloat(l.horas) || 0,
+        propina_gen: parseFloat(l.propina_gen) || 0,
+        pts_rol: getRolPts(l.rol), pts_val: l.pts_val, take_home: l.take_home
+      })),
+      ...workedCob.map(c => ({
+        id: c.empId, nombre: c.nombre, rol: c.rol_cobertura,
+        cobertura: true, rol_original: c.rol_original,
+        horas: parseFloat(c.horas) || 0,
+        propina_gen: parseFloat(c.propina_gen) || 0,
+        pts_rol: getRolPts(c.rol_cobertura), pts_val: c.pts_val, take_home: c.take_home
+      }))
+    ]
   };
 
   const turnoId = genId();
@@ -1188,6 +1359,8 @@ function resetTurno() {
   DRAFT.lineas.forEach(l => {
     l.activo = false; l.horas = ''; l.propina_gen = ''; l.pts_val = 0; l.take_home = 0;
   });
+  DRAFT.coberturas = [];
+  _cobPickerRol = null;
   renderTurno();
 }
 
@@ -1243,8 +1416,8 @@ function renderHistorial(turnos) {
             ${(d.lineas||[]).map(l => `
               <div class="hist-emp-row">
                 <div>
-                  <div class="hist-emp-name">${l.nombre}</div>
-                  <div class="hist-emp-meta">${rolLabel(l.rol)} · ${l.horas||0}h · ${fmtNum(l.pts_val)} pts</div>
+                  <div class="hist-emp-name">${l.nombre}${l.cobertura ? '<span class="badge-cob">COB</span>' : ''}</div>
+                  <div class="hist-emp-meta">${rolLabel(l.rol)}${l.cobertura&&l.rol_original?` <span style="color:#a08040">(${rolLabel(l.rol_original)})</span>`:''} · ${l.horas||0}h · ${fmtNum(l.pts_val)} pts</div>
                 </div>
                 <div class="hist-emp-take">${fmtCRC(l.take_home)}</div>
               </div>`).join('')}
