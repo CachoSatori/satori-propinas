@@ -491,6 +491,28 @@ header {
           <div class="admin-card-body" id="admin-emp-list"></div>
         </div>
       </div>
+      <!-- Importar lista -->
+      <div id="import-section" style="margin-bottom:20px">
+        <div class="sl">Importar empleados</div>
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <span class="admin-card-title">Pegar lista de nombres</span>
+            <button class="btn btn-ghost btn-sm" onclick="toggleImport()">▼</button>
+          </div>
+          <div id="import-body" style="display:none;padding:16px">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:10px;letter-spacing:.05em">
+              Un nombre por línea. Se agregan con rol "Sin asignar" — asignales el rol después desde esta misma pantalla.
+            </div>
+            <textarea id="import-names" class="form-input" rows="10"
+              style="width:100%;resize:vertical;font-size:11px;line-height:1.6"
+              placeholder="ROCIO&#10;JOAQUINA&#10;GUILLE&#10;..."></textarea>
+            <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+              <button class="btn btn-teal" onclick="importarEmpleados()">Importar</button>
+              <span id="import-status" style="font-size:9px;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- Roles y puntos -->
       <div>
         <div class="sl">Puntos por Rol</div>
@@ -847,6 +869,45 @@ function renderTurno() {
   }
   container.innerHTML = html;
   calcTurno();
+}
+
+function toggleImport() {
+  const body = document.getElementById('import-body');
+  body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+
+async function importarEmpleados() {
+  const raw = document.getElementById('import-names').value;
+  const nombres = raw.split('\n')
+    .map(n => n.trim().toUpperCase())
+    .filter(n => n.length > 1);
+
+  if (!nombres.length) return;
+
+  const status = document.getElementById('import-status');
+  status.textContent = 'Importando...';
+
+  const existentes = new Set(EMPLEADOS.map(e => e.nombre.toUpperCase().trim()));
+  let agregados = 0;
+
+  for (const nombre of nombres) {
+    if (existentes.has(nombre)) continue;
+    const emp = { id: genId(), nombre, rol: 'sin_asignar', activo: true };
+    EMPLEADOS.push(emp);
+    existentes.add(nombre);
+    agregados++;
+    // Background sync
+    apiPost({ action: 'saveEmpleado', data: emp }).catch(() => {});
+  }
+
+  saveLocal();
+  renderAdmin();
+  renderTurno();
+
+  const omitidos = nombres.length - agregados;
+  status.textContent = `✓ ${agregados} agregados${omitidos ? `, ${omitidos} ya existían` : ''}`;
+  document.getElementById('import-names').value = '';
+  setTimeout(() => { status.textContent = ''; }, 4000);
 }
 
 function irAAsignar(id) {
