@@ -111,11 +111,12 @@ function doPost(e) {
     else if (action === 'saveCatCaja')     result = saveCatCaja(params.data);
     else if (action === 'deleteCatCaja')   result = deleteCatCaja(params.id);
     // ── Módulo Propinas ───────────────────────────────────────
-    else if (action === 'saveEmpleadoPropinas')   result = saveEmpleadoPropinas(params.data);
-    else if (action === 'deleteEmpleadoPropinas') result = deleteEmpleadoPropinas(params.id);
-    else if (action === 'saveRolPropinas')         result = saveRolPropinas(params.data);
-    else if (action === 'saveTurnoPropinas')       result = saveTurnoPropinas(params.data);
-    else if (action === 'deleteTurnoPropinas')     result = deleteTurnoPropinas(params.id);
+    else if (action === 'saveEmpleadoPropinas')      result = saveEmpleadoPropinas(params.data);
+    else if (action === 'deleteEmpleadoPropinas')    result = deleteEmpleadoPropinas(params.id);
+    else if (action === 'saveRolPropinas')            result = saveRolPropinas(params.data);
+    else if (action === 'saveTurnoPropinas')          result = saveTurnoPropinas(params.data);
+    else if (action === 'deleteTurnoPropinas')        result = deleteTurnoPropinas(params.id);
+    else if (action === 'syncEmpleadosDashboard')    result = syncEmpleadosDashboard(params.nombres);
 
     output.setContent(JSON.stringify(result));
   } catch(err) {
@@ -853,6 +854,30 @@ function saveEmpleadoPropinas(data) {
   const newId = d.id || Utilities.getUuid();
   ws.appendRow([newId, d.nombre, d.rol, activo]);
   return { ok: true, id: newId };
+}
+
+function syncEmpleadosDashboard(nombres) {
+  if (!nombres || !Array.isArray(nombres)) return { ok: false, error: 'nombres must be array' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let ws = ss.getSheetByName(SHEET_PROP_EMPLEADOS);
+  if (!ws) {
+    ws = ss.insertSheet(SHEET_PROP_EMPLEADOS);
+    ws.appendRow(['id', 'nombre', 'rol', 'activo']);
+  }
+  const existing = new Set();
+  if (ws.getLastRow() >= 2) {
+    const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 2).getValues();
+    rows.forEach(r => { if (r[1]) existing.add(String(r[1]).toUpperCase().trim()); });
+  }
+  const added = [];
+  nombres.forEach(nombre => {
+    const norm = String(nombre).toUpperCase().trim();
+    if (!norm || existing.has(norm)) return;
+    ws.appendRow([Utilities.getUuid(), norm, 'sin_asignar', true]);
+    existing.add(norm);
+    added.push(norm);
+  });
+  return { ok: true, added };
 }
 
 function deleteEmpleadoPropinas(id) {

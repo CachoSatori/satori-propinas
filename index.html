@@ -177,6 +177,35 @@ header {
   font-size:10px; font-weight:700; color:#888; pointer-events:none;
 }
 
+/* ── ASIGNAR ROL SECTION ── */
+.asignar-section {
+  background:#fff8ec; border:2px solid var(--gold); border-radius:2px;
+  margin-bottom:24px; overflow:hidden;
+}
+.asignar-header {
+  display:flex; align-items:center; gap:10px; padding:12px 16px;
+  background:#fff3dc; font-size:10px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:#7a5a10; border-bottom:1px solid #e8d080;
+}
+.asignar-icon { font-size:13px; }
+.asignar-count {
+  margin-left:auto; background:var(--gold); color:#fff; font-size:8px;
+  padding:2px 8px; border-radius:2px; letter-spacing:.1em;
+}
+.asignar-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 16px; border-bottom:1px solid #f0e8c8;
+}
+.asignar-row:last-child { border-bottom:none; }
+.asignar-nombre { font-size:11px; font-weight:700; color:var(--ink); letter-spacing:.03em; }
+.asignar-sub { font-size:8px; color:#a08040; margin-top:2px; letter-spacing:.05em; text-transform:uppercase; }
+.btn-asignar {
+  padding:5px 14px; background:var(--gold); color:#fff; border:none; border-radius:2px;
+  font-family:'DM Mono',monospace; font-size:8px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; cursor:pointer; transition:background .15s; white-space:nowrap;
+}
+.btn-asignar:hover { background:#b8941e; }
+
 /* ── POOL TOTALS BAR ── */
 .pool-bar {
   background:var(--ink); border-radius:2px; padding:16px 20px;
@@ -739,7 +768,30 @@ function renderTurno() {
   // Remove from draft employees no longer active
   DRAFT.lineas = DRAFT.lineas.filter(l => activos.find(e => e.id === l.id));
 
+  // Employees with no valid rol → ASIGNAR section
+  const sinRol = activos.filter(e => !ROL_ORDER.includes(e.rol));
+
   let html = '';
+
+  if (sinRol.length) {
+    html += `
+      <div class="asignar-section">
+        <div class="asignar-header">
+          <span class="asignar-icon">⚠</span>
+          <span>Sin rol asignado</span>
+          <span class="asignar-count">${sinRol.length} empleado${sinRol.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${sinRol.map(emp => `
+          <div class="asignar-row">
+            <div>
+              <div class="asignar-nombre">${emp.nombre}</div>
+              <div class="asignar-sub">Ir a Admin → Editar → asignar puesto</div>
+            </div>
+            <button class="btn-asignar" onclick="irAAsignar('${emp.id}')">Asignar →</button>
+          </div>`).join('')}
+      </div>`;
+  }
+
   ROL_ORDER.forEach(rol => {
     const emps = activos.filter(e => e.rol === rol);
     if (!emps.length) return;
@@ -795,6 +847,18 @@ function renderTurno() {
   }
   container.innerHTML = html;
   calcTurno();
+}
+
+function irAAsignar(id) {
+  showView('admin');
+  setTimeout(() => {
+    const el = document.getElementById('admin-row-' + id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.outline = '2px solid var(--gold)';
+      setTimeout(() => { el.style.outline = ''; }, 2000);
+    }
+  }, 120);
 }
 
 // ── Toggle empleado ───────────────────────────────────────────
@@ -1216,7 +1280,7 @@ function renderAdminEmps() {
   }
 
   el.innerHTML = all.map(e => `
-    <div class="admin-emp-row">
+    <div class="admin-emp-row" id="admin-row-${e.id}">
       <div>
         <div class="admin-emp-name">${e.nombre}
           ${!e.activo || e.activo === 'false' ? '<span style="font-size:8px;color:#aaa;margin-left:6px">INACTIVO</span>' : ''}
