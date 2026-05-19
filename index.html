@@ -1085,14 +1085,21 @@ async function loadHistorial() {
   el.innerHTML = '<div class="empty">Cargando...</div>';
 
   try {
-    const res = await apiFetch({ action:'getTurnosPropinas', mes, anio });
+    // Fetch sin filtro → backend devuelve todo, filtramos client-side
+    // (funciona con cualquier versión del script: Date objects se serializan
+    // como ISO strings y "2026-05-19T..." empieza con "2026-05")
+    const res = await apiFetch({ action:'getTurnosPropinas' });
     if (!res.ok) throw new Error(res.error);
-    const turnos = res.data;
-    TURNOS_CACHE = turnos;
-    localStorage.setItem('prop_turnos', JSON.stringify(turnos));
+    const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
+    const todos  = res.data || [];
+    TURNOS_CACHE = todos;
+    localStorage.setItem('prop_turnos', JSON.stringify(todos));
+    const turnos = todos.filter(t => String(t.fecha || '').startsWith(prefix));
     renderHistorial(turnos);
   } catch(e) {
-    renderHistorial(TURNOS_CACHE);
+    const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
+    const turnos = TURNOS_CACHE.filter(t => String(t.fecha || '').startsWith(prefix));
+    renderHistorial(turnos.length ? turnos : TURNOS_CACHE);
     toast('Cargando desde caché', 'error');
   }
 }
@@ -1206,11 +1213,18 @@ async function loadResumen() {
   document.getElementById('res-kpis').innerHTML = '';
 
   try {
-    const res = await apiFetch({ action:'getTurnosPropinas', mes, anio });
+    const res = await apiFetch({ action:'getTurnosPropinas' });
     if (!res.ok) throw new Error(res.error);
-    renderResumen(res.data, mes, anio);
+    const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
+    const todos  = res.data || [];
+    TURNOS_CACHE = todos;
+    localStorage.setItem('prop_turnos', JSON.stringify(todos));
+    const turnos = todos.filter(t => String(t.fecha || '').startsWith(prefix));
+    renderResumen(turnos, mes, anio);
   } catch(e) {
-    renderResumen(TURNOS_CACHE, mes, anio);
+    const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
+    const turnos = TURNOS_CACHE.filter(t => String(t.fecha || '').startsWith(prefix));
+    renderResumen(turnos.length ? turnos : TURNOS_CACHE, mes, anio);
     toast('Usando caché local', 'error');
   }
 }
