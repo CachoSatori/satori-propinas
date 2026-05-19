@@ -1437,7 +1437,9 @@ async function saveEmp() {
   try {
     const payload = { id: empId, nombre, rol, activo };
     const res = await apiPost({ action:'saveEmpleadoPropinas', data: JSON.stringify(payload) });
-    if (res.ok && res.id && res.id !== empId) {
+    if (!res.ok) {
+      toast('⚠ No se guardó en Sheets: ' + (res.error || 'error'), 'error');
+    } else if (res.id && res.id !== empId) {
       // El backend generó un UUID distinto — actualizar
       const idx = EMPLEADOS.findIndex(e => e.id === empId);
       if (idx >= 0) EMPLEADOS[idx].id = res.id;
@@ -1445,7 +1447,10 @@ async function saveEmp() {
       if (dl) dl.id = res.id;
       saveLocal();
     }
-  } catch(_) { /* offline — queda en local */ }
+  } catch(err) {
+    toast('⚠ Sin conexión con Sheets', 'error');
+    console.error('saveEmp backend error:', err);
+  }
 }
 
 async function deleteEmp(id) {
@@ -1461,8 +1466,12 @@ async function deleteEmp(id) {
 
   // ── 2. Intentar sync con backend en background ──────────────
   try {
-    await apiPost({ action:'deleteEmpleadoPropinas', id });
-  } catch(_) { /* offline */ }
+    const res = await apiPost({ action:'deleteEmpleadoPropinas', id });
+    if (!res.ok) toast('⚠ No se eliminó en Sheets: ' + (res.error || 'error'), 'error');
+  } catch(err) {
+    toast('⚠ Sin conexión con Sheets', 'error');
+    console.error('deleteEmp backend error:', err);
+  }
 }
 
 // ── Roles ─────────────────────────────────────────────────────
