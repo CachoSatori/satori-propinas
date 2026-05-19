@@ -330,6 +330,7 @@ header {
 .badge-barback  { background:#f0ecfb; color:#5a3a8b; }
 .badge-runner   { background:#fbf4ec; color:#8b5a2a; }
 .badge-cocina   { background:#fef0ec; color:#8b3a2a; }
+.badge-cajero   { background:#fef8ec; color:#8b6a10; }
 .badge-manager  { background:#f5f5f5; color:#555; }
 .badge-inactive { background:#f5f0e8; color:#aaa; }
 
@@ -622,7 +623,7 @@ function fmtNum(n) {
   return Number(n).toLocaleString('es-CR', {maximumFractionDigits:1});
 }
 
-const ROLES_DEFAULTS = { salonero:10, barman:5, barback:4, runner:3, cocina:5, manager:3 };
+const ROLES_DEFAULTS = { salonero:10, barman:5, barback:4, runner:3, cocina:5, cajero:4, manager:3 };
 
 // Normaliza variaciones de nombre de rol al valor canónico
 const ROL_ALIAS = {
@@ -631,7 +632,8 @@ const ROL_ALIAS = {
   barback: ['barback','bar back','ayudante barra'],
   runner:  ['runner','busser','busboy','ayudante'],
   cocina:  ['cocina','cocinero','cocinera','chef','kitchen','cook'],
-  manager: ['manager','gerente','cajero','caja','supervisor'],
+  cajero:  ['cajero','caja','cashier'],
+  manager: ['manager','gerente','supervisor','encargado'],
 };
 
 function normalizarRol(rol) {
@@ -657,7 +659,7 @@ function rolBadge(rol, activo = true) {
 function rolLabel(rol) {
   const labels = {
     salonero:'Salonero', barman:'Barman', barback:'Barback',
-    runner:'Runner', cocina:'Cocina', manager:'Manager'
+    runner:'Runner', cocina:'Cocina', cajero:'Cajero', manager:'Manager'
   };
   return labels[rol] || rol;
 }
@@ -767,7 +769,7 @@ function showView(name) {
 // ═══════════════════════════════════════════════════════════════
 // TURNO — RENDER
 // ═══════════════════════════════════════════════════════════════
-const ROL_ORDER = ['salonero','barman','barback','runner','cocina','manager'];
+const ROL_ORDER = ['salonero','barman','barback','runner','cocina','cajero','manager'];
 const ROL_NAMES = {
   salonero:'Saloneros', barman:'Barman', barback:'Barback',
   runner:'Runners', cocina:'Cocina', manager:'Manager'
