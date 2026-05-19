@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Satori · Propinas</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&family=Shippori+Mincho:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0d0d0d; --paper: #f5f0e8; --gold: #c8a96e; --red: #c23b22;
+  --green: #4a7c59; --border: #d4cfc4; --panel: #ede8de; --muted: #8a8070;
+  --blue: #2a4a6b; --gold-dim: #c8a96e30;
+  --teal: #2a7a6a; --teal-dim: #2a7a6a22;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--paper); color:var(--ink); font-family:'DM Mono',monospace; min-height:100vh; }
+
+/* ── HEADER ── */
+header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 28px; height:52px; background:var(--ink);
+  border-bottom:1px solid #1a1a1a; position:sticky; top:0; z-index:200;
+}
+.logo { font-family:'Shippori Mincho',serif; font-size:17px; font-weight:700; color:var(--gold); letter-spacing:.1em; }
+.logo-sub { font-size:8px; letter-spacing:.3em; color:#444; text-transform:uppercase; margin-left:10px; }
+.header-right { display:flex; align-items:center; gap:12px; }
+.sync-badge { font-size:9px; color:#555; cursor:pointer; letter-spacing:.05em; }
+.sync-badge.ok { color:var(--teal); }
+.sync-badge.err { color:var(--red); }
+.sync-badge.loading { color:#c8a96e; }
+
+/* ── NAV ── */
+.nav-tabs {
+  display:flex; background:var(--panel); border-bottom:2px solid var(--border);
+  padding:0 24px; overflow-x:auto; gap:0;
+}
+.nav-tab {
+  padding:13px 20px; cursor:pointer; font-size:9px; letter-spacing:.1em;
+  text-transform:uppercase; border-bottom:2px solid transparent;
+  margin-bottom:-2px; color:#7a7060; transition:all .15s; white-space:nowrap; font-weight:600;
+}
+.nav-tab:hover { color:var(--ink); }
+.nav-tab.active { color:var(--teal); border-bottom-color:var(--teal); font-weight:700; }
+
+/* ── MAIN ── */
+.main { padding:28px 32px; max-width:1100px; margin:0 auto; }
+.view { display:none; }
+.view.active { display:block; animation:fadeUp .2s ease both; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+/* ── SECTION LABEL ── */
+.sl { font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:#4a4030;
+  margin-bottom:18px; display:flex; align-items:center; gap:10px; font-weight:700; }
+.sl::after { content:''; flex:1; height:1px; background:var(--border); }
+.sl-pts { font-size:9px; color:var(--muted); font-weight:400; letter-spacing:.05em; }
+
+/* ── CARDS ── */
+.card { background:var(--ink); border-radius:2px; padding:20px 24px; margin-bottom:16px; }
+.card-light { background:#fff; border:1px solid var(--border); border-radius:2px; padding:20px 24px; margin-bottom:16px; }
+
+/* ── FORM ELEMENTS ── */
+.form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:16px; }
+.form-group { display:flex; flex-direction:column; gap:5px; }
+.form-label { font-size:7px; letter-spacing:.3em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.form-input, .form-select {
+  border:1px solid var(--border); padding:9px 12px;
+  font-family:'DM Mono',monospace; font-size:11px; background:var(--paper);
+  border-radius:2px; outline:none; color:var(--ink); transition:border .15s;
+}
+.form-input:focus, .form-select:focus { border-color:var(--teal); }
+.form-input.dark, .form-select.dark { background:#0a0a0a; border-color:#2a2a2a; color:#f0ece4; }
+.form-input.dark:focus, .form-select.dark:focus { border-color:var(--teal); }
+.monto-wrap { position:relative; }
+.monto-prefix {
+  position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  font-size:10px; font-weight:700; color:#555; pointer-events:none;
+}
+.monto-wrap .form-input { padding-left:26px; }
+
+/* ── BOTONES ── */
+.btn { display:inline-flex; align-items:center; gap:7px; padding:9px 20px;
+  font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.15em;
+  text-transform:uppercase; cursor:pointer; border-radius:2px; border:none;
+  font-weight:700; transition:all .15s; }
+.btn-primary { background:var(--ink); color:var(--gold); }
+.btn-primary:hover { background:#1a1a1a; }
+.btn-teal { background:var(--teal); color:#fff; }
+.btn-teal:hover { background:#1f5e51; }
+.btn-red { background:var(--red); color:#fff; }
+.btn-red:hover { background:#a02d1a; }
+.btn-ghost { background:none; border:1px solid var(--border); color:var(--muted); }
+.btn-ghost:hover { border-color:var(--ink); color:var(--ink); }
+.btn-sm { padding:5px 12px; font-size:8px; }
+.btn-add {
+  width:100%; padding:10px; border:2px dashed var(--border); background:none;
+  font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); cursor:pointer; border-radius:2px;
+  transition:all .15s;
+}
+.btn-add:hover { border-color:var(--teal); color:var(--teal); }
+
+/* ── KPI BAR ── */
+.kpi-bar { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:24px; }
+.kpi-card { background:var(--ink); padding:14px 16px; border-radius:2px; border-left:3px solid var(--teal); }
+.kpi-card.gold { border-left-color:var(--gold); }
+.kpi-card.red  { border-left-color:var(--red); }
+.kpi-label { font-size:7px; letter-spacing:.2em; text-transform:uppercase; color:#555; margin-bottom:6px; }
+.kpi-val { font-family:'Syne',sans-serif; font-size:17px; font-weight:800; color:var(--teal); line-height:1; }
+.kpi-val.gold { color:var(--gold); }
+.kpi-val.red  { color:#e07060; }
+
+/* ── TURNO HEADER BAR ── */
+.turno-config {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--ink); padding:16px 20px; border-radius:2px; margin-bottom:20px;
+}
+.turno-config .form-group { min-width:150px; }
+.turno-meta {
+  font-size:10px; color:#aaa; letter-spacing:.05em;
+  padding:9px 14px; background:#111; border-radius:2px; border:1px solid #222;
+  white-space:nowrap;
+}
+.turno-meta strong { color:var(--gold); }
+
+/* ── EMPLOYEE ROW ── */
+.emp-section { margin-bottom:8px; }
+.emp-rows { background:#fff; border:1px solid var(--border); border-radius:2px; overflow:hidden; margin-bottom:20px; }
+.emp-row {
+  display:grid; grid-template-columns:200px 1fr;
+  align-items:center; border-bottom:1px solid var(--border);
+  transition:background .12s;
+}
+.emp-row:last-child { border-bottom:none; }
+.emp-row.worked { background:#f9fcf9; }
+.emp-row.worked .emp-label-col { background:#f2faf2; }
+.emp-label-col {
+  display:flex; align-items:center; gap:10px; padding:12px 14px;
+  border-right:1px solid var(--border); cursor:pointer;
+  transition:background .12s;
+}
+.emp-label-col:hover { background:var(--panel); }
+.emp-chk { width:14px; height:14px; accent-color:var(--teal); cursor:pointer; flex-shrink:0; }
+.emp-nombre { font-size:11px; font-weight:600; letter-spacing:.03em; }
+.emp-fields-col {
+  display:grid; grid-template-columns:100px 140px 1fr 120px;
+  align-items:center; gap:8px; padding:10px 14px;
+}
+.emp-field-label { font-size:7px; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); margin-bottom:3px; }
+.emp-pts-badge {
+  background:var(--teal-dim); color:var(--teal); font-size:10px; font-weight:700;
+  padding:6px 10px; border-radius:2px; text-align:center; letter-spacing:.03em;
+}
+.emp-take-badge {
+  background:var(--ink); color:var(--gold); font-family:'Syne',sans-serif;
+  font-size:13px; font-weight:800; padding:6px 10px; border-radius:2px;
+  text-align:right; letter-spacing:.02em;
+}
+.emp-take-badge.zero { color:#333; }
+.emp-inactive .emp-fields-col { opacity:.25; pointer-events:none; }
+.emp-input-sm {
+  border:1px solid var(--border); padding:7px 10px;
+  font-family:'DM Mono',monospace; font-size:11px; background:var(--paper);
+  border-radius:2px; outline:none; color:var(--ink); width:100%;
+  transition:border .15s;
+}
+.emp-input-sm:focus { border-color:var(--teal); }
+.emp-input-tips {
+  border:1px solid var(--border); padding:7px 10px 7px 22px;
+  font-family:'DM Mono',monospace; font-size:11px; background:var(--paper);
+  border-radius:2px; outline:none; color:var(--ink); width:100%;
+  transition:border .15s;
+}
+.emp-input-tips:focus { border-color:var(--gold); }
+.emp-tips-wrap { position:relative; }
+.emp-tips-prefix {
+  position:absolute; left:8px; top:50%; transform:translateY(-50%);
+  font-size:10px; font-weight:700; color:#888; pointer-events:none;
+}
+
+/* ── POOL TOTALS BAR ── */
+.pool-bar {
+  background:var(--ink); border-radius:2px; padding:16px 20px;
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:12px; margin-bottom:16px;
+}
+.pool-item { }
+.pool-label { font-size:7px; letter-spacing:.2em; text-transform:uppercase; color:#444; margin-bottom:4px; }
+.pool-val { font-family:'Syne',sans-serif; font-size:15px; font-weight:800; color:var(--gold); }
+.pool-val.teal { color:#7ec8b8; }
+.pool-val.dim { color:#555; font-size:12px; }
+
+/* ── TURNO SAVE ACTIONS ── */
+.turno-actions { display:flex; gap:10px; margin-bottom:32px; align-items:center; }
+
+/* ── TABLA ── */
+.tbl { width:100%; border-collapse:collapse; font-size:11px; }
+.tbl thead tr { background:var(--ink); color:#aaa; }
+.tbl thead th { padding:9px 12px; text-align:left; font-size:8px; letter-spacing:.18em; text-transform:uppercase; font-weight:500; }
+.tbl thead th.r { text-align:right; }
+.tbl tbody tr { border-bottom:1px solid var(--border); transition:background .1s; }
+.tbl tbody tr:hover { background:var(--panel); }
+.tbl td { padding:10px 12px; font-size:11px; }
+.tbl td.r { text-align:right; font-family:'Syne',sans-serif; font-weight:700; }
+.tbl td.muted { color:var(--muted); }
+.tbl-wrap { overflow-x:auto; margin-bottom:24px; border:1px solid var(--border); border-radius:2px; }
+
+/* ── HISTORIAL ITEM ── */
+.hist-item {
+  background:#fff; border:1px solid var(--border); border-radius:2px;
+  margin-bottom:10px; overflow:hidden; cursor:pointer;
+  transition:border-color .15s;
+}
+.hist-item:hover { border-color:var(--teal); }
+.hist-item-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px;
+}
+.hist-fecha { font-size:12px; font-weight:700; letter-spacing:.03em; }
+.hist-meta { font-size:9px; color:var(--muted); margin-top:2px; }
+.hist-total { font-family:'Syne',sans-serif; font-size:16px; font-weight:800; color:var(--teal); }
+.hist-actions { display:flex; gap:8px; align-items:center; }
+.hist-body {
+  display:none; border-top:1px solid var(--border);
+  padding:16px 18px; background:var(--panel);
+}
+.hist-body.open { display:block; }
+.hist-detail-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:8px;
+}
+.hist-emp-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 10px; background:#fff; border:1px solid var(--border); border-radius:2px;
+}
+.hist-emp-name { font-size:10px; font-weight:700; }
+.hist-emp-meta { font-size:8px; color:var(--muted); }
+.hist-emp-take { font-family:'Syne',sans-serif; font-size:13px; font-weight:800; color:var(--teal); }
+
+/* ── RESUMEN TABLE ── */
+.res-section { margin-bottom:24px; }
+.res-section-hdr {
+  background:var(--ink); color:var(--gold); padding:10px 16px;
+  font-size:8px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
+  display:flex; justify-content:space-between; align-items:center;
+}
+.res-row {
+  display:grid;
+  grid-template-columns:180px 1fr 70px 70px 100px 100px 110px;
+  padding:9px 16px; border-bottom:1px solid var(--border);
+  font-size:11px; align-items:center; background:#fff;
+}
+.res-row:hover { background:var(--panel); }
+.res-row.total-row {
+  background:var(--ink); color:var(--gold);
+  font-family:'Syne',sans-serif; font-weight:700; font-size:12px;
+}
+.res-col-r { text-align:right; font-family:'Syne',sans-serif; font-weight:700; }
+.res-col-c { text-align:center; }
+.res-hdr-row {
+  display:grid;
+  grid-template-columns:180px 1fr 70px 70px 100px 100px 110px;
+  padding:7px 16px; border-bottom:1px solid var(--border); background:var(--panel);
+  font-size:7px; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); font-weight:700;
+}
+
+/* ── ADMIN CARDS ── */
+.admin-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+@media(max-width:720px) { .admin-grid { grid-template-columns:1fr; } }
+.admin-card { background:#fff; border:1px solid var(--border); border-radius:2px; overflow:hidden; }
+.admin-card-head {
+  background:var(--ink); padding:12px 16px;
+  display:flex; justify-content:space-between; align-items:center;
+}
+.admin-card-title { font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:#aaa; font-weight:600; }
+.admin-card-body { padding:0; }
+.admin-emp-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 16px; border-bottom:1px solid var(--border);
+  transition:background .1s;
+}
+.admin-emp-row:last-child { border-bottom:none; }
+.admin-emp-row:hover { background:var(--panel); }
+.admin-emp-name { font-size:11px; font-weight:700; }
+.admin-emp-actions { display:flex; gap:6px; }
+.admin-role-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 16px; border-bottom:1px solid var(--border);
+}
+.admin-role-row:last-child { border-bottom:none; }
+.admin-role-name { font-size:11px; font-weight:600; text-transform:capitalize; }
+.admin-pts-input {
+  width:64px; border:1px solid var(--border); padding:5px 8px;
+  font-family:'DM Mono',monospace; font-size:12px; font-weight:700;
+  text-align:center; border-radius:2px; outline:none; transition:border .15s;
+}
+.admin-pts-input:focus { border-color:var(--teal); }
+
+/* ── BADGE ── */
+.badge { font-size:7px; letter-spacing:.15em; text-transform:capitalize; padding:3px 9px; border-radius:1px; font-weight:700; }
+.badge-salonero { background:#eef7f0; color:#3a7050; }
+.badge-barman   { background:#edf2fb; color:#2a4a6b; }
+.badge-barback  { background:#f0ecfb; color:#5a3a8b; }
+.badge-runner   { background:#fbf4ec; color:#8b5a2a; }
+.badge-cocina   { background:#fef0ec; color:#8b3a2a; }
+.badge-manager  { background:#f5f5f5; color:#555; }
+.badge-inactive { background:#f5f0e8; color:#aaa; }
+
+/* ── FILTERS ── */
+.filters-bar {
+  display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  padding:12px 16px; background:var(--panel); border:1px solid var(--border);
+  border-radius:2px; margin-bottom:20px;
+}
+.filters-bar label { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#666; }
+
+/* ── MODAL ── */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1000; align-items:center; justify-content:center; padding:20px; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--paper); border-radius:3px; padding:28px; width:100%; max-width:480px; border:1px solid var(--border); max-height:90vh; overflow-y:auto; }
+.modal-title { font-family:'Shippori Mincho',serif; font-size:18px; font-weight:700; margin-bottom:20px; }
+.modal-actions { display:flex; gap:10px; margin-top:20px; justify-content:flex-end; }
+
+/* ── TOAST ── */
+.toast {
+  position:fixed; bottom:24px; right:24px; background:var(--ink);
+  color:var(--gold); padding:12px 20px; border-radius:2px;
+  font-size:10px; letter-spacing:.05em; z-index:9999;
+  transform:translateY(80px); opacity:0; transition:all .3s;
+}
+.toast.show { transform:translateY(0); opacity:1; }
+.toast.error { color:#e07060; }
+.toast.success { color:#7ec8b8; }
+
+/* ── EMPTY ── */
+.empty { padding:48px; text-align:center; color:var(--muted); font-size:11px; }
+
+/* ── RESPONSIVE ── */
+@media(max-width:700px) {
+  .main { padding:16px; }
+  .emp-row { grid-template-columns:1fr; }
+  .emp-fields-col { grid-template-columns:80px 120px 1fr; }
+  .emp-label-col { border-right:none; border-bottom:1px solid var(--border); }
+  .res-row, .res-hdr-row { grid-template-columns:140px 1fr 60px 60px 80px; }
+  .res-row > *:nth-child(6),
+  .res-hdr-row > *:nth-child(6) { display:none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center">
+    <span class="logo">SATORI</span>
+    <span class="logo-sub">PROPINAS</span>
+  </div>
+  <div class="header-right">
+    <span class="sync-badge" id="sync-badge" onclick="syncAll()">● SYNC</span>
+  </div>
+</header>
+
+<div class="nav-tabs">
+  <div class="nav-tab active" data-view="turno"    onclick="showView('turno')">Turno</div>
+  <div class="nav-tab"        data-view="historial" onclick="showView('historial')">Historial</div>
+  <div class="nav-tab"        data-view="resumen"   onclick="showView('resumen')">Resumen</div>
+  <div class="nav-tab"        data-view="admin"     onclick="showView('admin')">Admin</div>
+</div>
+
+<div class="main">
+
+  <!-- ══════════════════════════════════ TURNO ══════════════════════════════════ -->
+  <div class="view active" id="view-turno">
+    <div class="turno-config">
+      <div class="form-group">
+        <div class="form-label">Fecha</div>
+        <input type="date" class="form-input dark" id="turno-fecha" oninput="onFechaChange()">
+      </div>
+      <div class="form-group">
+        <div class="form-label">Turno</div>
+        <select class="form-select dark" id="turno-tipo">
+          <option value="PM">PM — Noche</option>
+          <option value="AM">AM — Mediodía</option>
+        </select>
+      </div>
+      <div class="turno-meta" id="turno-meta">—</div>
+    </div>
+
+    <div id="turno-sections"></div>
+
+    <div class="pool-bar" id="pool-bar">
+      <div class="pool-item">
+        <div class="pool-label">Pool de propinas</div>
+        <div class="pool-val gold" id="pool-total">₡ 0</div>
+      </div>
+      <div class="pool-item">
+        <div class="pool-label">Total puntos</div>
+        <div class="pool-val dim" id="pool-pts">0</div>
+      </div>
+      <div class="pool-item">
+        <div class="pool-label">Valor por punto</div>
+        <div class="pool-val teal" id="pool-rate">₡ —</div>
+      </div>
+      <div class="pool-item">
+        <div class="pool-label">Distribuido</div>
+        <div class="pool-val gold" id="pool-dist">₡ 0</div>
+      </div>
+    </div>
+
+    <div class="turno-actions">
+      <button class="btn btn-teal" onclick="saveTurno()">▶ Guardar Turno</button>
+      <button class="btn btn-ghost btn-sm" onclick="resetTurno()">Limpiar</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════ HISTORIAL ══════════════════════════════ -->
+  <div class="view" id="view-historial">
+    <div class="filters-bar">
+      <label>Mes</label>
+      <select class="form-select" id="hist-mes" style="width:120px" onchange="loadHistorial()">
+        <option value="1">Enero</option><option value="2">Febrero</option>
+        <option value="3">Marzo</option><option value="4">Abril</option>
+        <option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option>
+        <option value="9">Setiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <label>Año</label>
+      <input type="number" class="form-input" id="hist-anio" value="2026" style="width:80px" onchange="loadHistorial()">
+    </div>
+    <div id="historial-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════ RESUMEN ════════════════════════════════ -->
+  <div class="view" id="view-resumen">
+    <div class="filters-bar">
+      <label>Mes</label>
+      <select class="form-select" id="res-mes" style="width:120px" onchange="loadResumen()">
+        <option value="1">Enero</option><option value="2">Febrero</option>
+        <option value="3">Marzo</option><option value="4">Abril</option>
+        <option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option>
+        <option value="9">Setiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <label>Año</label>
+      <input type="number" class="form-input" id="res-anio" value="2026" style="width:80px" onchange="loadResumen()">
+      <button class="btn btn-ghost btn-sm" onclick="loadResumen()">Actualizar</button>
+    </div>
+    <div class="kpi-bar" id="res-kpis"></div>
+    <div id="resumen-content"></div>
+  </div>
+
+  <!-- ══════════════════════════════════ ADMIN ══════════════════════════════════ -->
+  <div class="view" id="view-admin">
+    <div class="admin-grid">
+      <!-- Empleados -->
+      <div>
+        <div class="sl">Empleados</div>
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <span class="admin-card-title">Equipo activo</span>
+            <button class="btn btn-ghost btn-sm" onclick="openEmpModal()">+ Agregar</button>
+          </div>
+          <div class="admin-card-body" id="admin-emp-list"></div>
+        </div>
+      </div>
+      <!-- Roles y puntos -->
+      <div>
+        <div class="sl">Puntos por Rol</div>
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <span class="admin-card-title">Multiplicador de horas</span>
+          </div>
+          <div class="admin-card-body" id="admin-roles-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- ── MODAL EMPLEADO ── -->
+<div class="modal-overlay" id="modal-emp">
+  <div class="modal">
+    <div class="modal-title" id="modal-emp-title">Nuevo Empleado</div>
+    <input type="hidden" id="emp-edit-id">
+    <div class="form-group" style="margin-bottom:14px">
+      <div class="form-label">Nombre</div>
+      <input type="text" class="form-input" id="emp-nombre" placeholder="Nombre del empleado" style="text-transform:uppercase">
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <div class="form-label">Rol</div>
+      <select class="form-select" id="emp-rol"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <div class="form-label">Estado</div>
+      <select class="form-select" id="emp-activo">
+        <option value="true">Activo</option>
+        <option value="false">Inactivo</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-emp')">Cancelar</button>
+      <button class="btn btn-teal btn-sm" onclick="saveEmp()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL TURNO DETAIL ── -->
+<div class="modal-overlay" id="modal-turno-det">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title" id="modal-det-title">Detalle de Turno</div>
+    <div id="modal-det-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-red btn-sm" id="modal-det-del" onclick="deleteTurnoFromModal()">Eliminar</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-turno-det')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const API_URL = 'https://script.google.com/macros/s/AKfycbz_MPh6TFtM6ToY_2CbbdHvtyKCwGg5uFPzYpw-9vcTtmtXX5BDIpnqE3KJgKtZwFBkeg/exec';
+const SECRET  = 'satori2026';
+
+// ═══════════════════════════════════════════════════════════════
+// ESTADO
+// ═══════════════════════════════════════════════════════════════
+let EMPLEADOS   = JSON.parse(localStorage.getItem('prop_empleados') || '[]');
+let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
+let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
+
+// Draft del turno en curso
+let DRAFT = { fecha:'', turno:'PM', lineas:[] };
+
+// Turno seleccionado en modal detail
+let TURNO_DETAIL_ID = null;
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const DIAS_ES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                  'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getDia(fechaStr) {
+  const d = new Date(fechaStr + 'T12:00:00');
+  return DIAS_ES[d.getDay()];
+}
+
+function getSemana(fechaStr) {
+  const d = new Date(fechaStr + 'T12:00:00');
+  const sem = Math.ceil(d.getDate() / 7);
+  return ['','1ra','2da','3ra','4ta','5ta'][sem] + ' semana';
+}
+
+function fmtCRC(n) {
+  if (!n && n !== 0) return '—';
+  return '₡ ' + Math.round(n).toLocaleString('es-CR');
+}
+
+function fmtNum(n) {
+  if (!n && n !== 0) return '—';
+  return Number(n).toLocaleString('es-CR', {maximumFractionDigits:1});
+}
+
+const ROLES_DEFAULTS = { salonero:10, barman:5, barback:4, runner:3, cocina:5, manager:3 };
+
+function getRolPts(rol) {
+  const r = ROLES_DATA.find(x => x.rol === rol);
+  return r ? Number(r.puntos) : (ROLES_DEFAULTS[rol] || 0);
+}
+
+function rolBadge(rol, activo = true) {
+  if (!activo) return `<span class="badge badge-inactive">${rol||'—'}</span>`;
+  return `<span class="badge badge-${rol||'manager'}">${rol||'—'}</span>`;
+}
+
+function rolLabel(rol) {
+  const labels = {
+    salonero:'Salonero', barman:'Barman', barback:'Barback',
+    runner:'Runner', cocina:'Cocina', manager:'Manager'
+  };
+  return labels[rol] || rol;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════════════════════
+async function apiFetch(params) {
+  const url = new URL(API_URL);
+  url.searchParams.set('key', SECRET);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+  const r = await fetch(url.toString());
+  return r.json();
+}
+
+async function apiPost(data) {
+  const r = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key: SECRET, ...data })
+  });
+  return r.json();
+}
+
+function setSyncStatus(status, msg) {
+  const el = document.getElementById('sync-badge');
+  el.className = 'sync-badge ' + status;
+  el.textContent = '● ' + (msg || 'SYNC');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+async function init() {
+  const now = new Date();
+  document.getElementById('hist-mes').value  = now.getMonth() + 1;
+  document.getElementById('res-mes').value   = now.getMonth() + 1;
+
+  // Set today's date
+  const today = todayStr();
+  document.getElementById('turno-fecha').value = today;
+  DRAFT.fecha = today;
+  updateTurnoMeta();
+
+  await syncAll();
+  renderTurno();
+  renderAdmin();
+}
+
+async function syncAll() {
+  setSyncStatus('loading', 'SYNC...');
+  try {
+    const [eRes, rRes] = await Promise.all([
+      apiFetch({ action:'getEmpleadosPropinas' }),
+      apiFetch({ action:'getRolesPropinas' })
+    ]);
+    if (eRes.ok) {
+      EMPLEADOS = eRes.data;
+      localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
+    }
+    if (rRes.ok) {
+      ROLES_DATA = rRes.data;
+      localStorage.setItem('prop_roles', JSON.stringify(ROLES_DATA));
+    }
+    setSyncStatus('ok', 'OK');
+    renderTurno();
+    renderAdmin();
+    toast('Datos sincronizados', 'success');
+  } catch(e) {
+    setSyncStatus('err', 'SIN CONEXIÓN');
+    toast('Sin conexión — usando caché local', 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVEGACIÓN
+// ═══════════════════════════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelector(`.nav-tab[data-view="${name}"]`).classList.add('active');
+  if (name === 'historial') loadHistorial();
+  if (name === 'resumen')   loadResumen();
+  if (name === 'admin')     renderAdmin();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TURNO — RENDER
+// ═══════════════════════════════════════════════════════════════
+const ROL_ORDER = ['salonero','barman','barback','runner','cocina','manager'];
+const ROL_NAMES = {
+  salonero:'Saloneros', barman:'Barman', barback:'Barback',
+  runner:'Runners', cocina:'Cocina', manager:'Manager'
+};
+
+function renderTurno() {
+  const activos = EMPLEADOS.filter(e => e.activo !== false && e.activo !== 'false');
+  const container = document.getElementById('turno-sections');
+
+  // Sync draft lineas: add new employees, keep existing values
+  ROL_ORDER.forEach(rol => {
+    activos.filter(e => e.rol === rol).forEach(emp => {
+      if (!DRAFT.lineas.find(l => l.id === emp.id)) {
+        DRAFT.lineas.push({
+          id: emp.id, nombre: emp.nombre, rol: emp.rol,
+          activo: false, horas: '', propina_gen: '', pts_rol: getRolPts(emp.rol),
+          pts_val: 0, take_home: 0
+        });
+      }
+    });
+  });
+  // Remove from draft employees no longer active
+  DRAFT.lineas = DRAFT.lineas.filter(l => activos.find(e => e.id === l.id));
+
+  let html = '';
+  ROL_ORDER.forEach(rol => {
+    const emps = activos.filter(e => e.rol === rol);
+    if (!emps.length) return;
+    const pts = getRolPts(rol);
+    html += `
+      <div class="emp-section">
+        <div class="sl">${ROL_NAMES[rol]} <span class="sl-pts">${pts} pts/hora</span></div>
+        <div class="emp-rows">`;
+    emps.forEach(emp => {
+      const l = DRAFT.lineas.find(x => x.id === emp.id) || {};
+      const chk = l.activo ? 'checked' : '';
+      html += `
+        <div class="emp-row${l.activo ? ' worked' : ''}" id="erow-${emp.id}">
+          <label class="emp-label-col" for="echk-${emp.id}">
+            <input type="checkbox" class="emp-chk" id="echk-${emp.id}"
+              ${chk} onchange="toggleEmp('${emp.id}')">
+            <span class="emp-nombre">${emp.nombre}</span>
+          </label>
+          <div class="emp-fields-col${l.activo ? '' : ' emp-inactive'}">
+            <div>
+              <div class="emp-field-label">Horas</div>
+              <input type="number" class="emp-input-sm" id="ehrs-${emp.id}"
+                value="${l.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                oninput="onHrsChange('${emp.id}')">
+            </div>
+            <div>
+              <div class="emp-field-label">Propinas (₡)</div>
+              <div class="emp-tips-wrap">
+                <span class="emp-tips-prefix">₡</span>
+                <input type="number" class="emp-input-tips" id="etips-${emp.id}"
+                  value="${l.propina_gen}" placeholder="0" step="100" min="0"
+                  oninput="onTipsChange('${emp.id}')">
+              </div>
+            </div>
+            <div>
+              <div class="emp-field-label">Puntos</div>
+              <div class="emp-pts-badge" id="epv-${emp.id}">${l.pts_val ? fmtNum(l.pts_val) : '—'}</div>
+            </div>
+            <div>
+              <div class="emp-field-label">Take Home</div>
+              <div class="emp-take-badge${l.take_home ? '' : ' zero'}" id="eth-${emp.id}">
+                ${l.take_home ? fmtCRC(l.take_home) : '₡ —'}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    });
+    html += `</div></div>`;
+  });
+
+  if (!activos.length) {
+    html = `<div class="empty">No hay empleados activos.<br>Agregalos en Admin.</div>`;
+  }
+  container.innerHTML = html;
+  calcTurno();
+}
+
+// ── Toggle empleado ───────────────────────────────────────────
+function toggleEmp(id) {
+  const l = DRAFT.lineas.find(x => x.id === id);
+  if (!l) return;
+  l.activo = document.getElementById('echk-' + id).checked;
+  const row = document.getElementById('erow-' + id);
+  const fields = row.querySelector('.emp-fields-col');
+  row.classList.toggle('worked', l.activo);
+  if (l.activo) fields.classList.remove('emp-inactive');
+  else { fields.classList.add('emp-inactive'); l.horas=''; l.propina_gen=''; }
+  calcTurno();
+}
+
+function onHrsChange(id) {
+  const l = DRAFT.lineas.find(x => x.id === id);
+  if (l) l.horas = parseFloat(document.getElementById('ehrs-' + id).value) || '';
+  calcTurno();
+}
+
+function onTipsChange(id) {
+  const l = DRAFT.lineas.find(x => x.id === id);
+  if (l) l.propina_gen = parseFloat(document.getElementById('etips-' + id).value) || '';
+  calcTurno();
+}
+
+// ── Cálculo principal ─────────────────────────────────────────
+function calcTurno() {
+  const worked = DRAFT.lineas.filter(l => l.activo);
+
+  // Pool = suma de propinas generadas
+  const pool = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+
+  // Points per person
+  worked.forEach(l => {
+    const hrs = parseFloat(l.horas) || 0;
+    const pts = getRolPts(l.rol);
+    l.pts_val = hrs * pts;
+  });
+
+  const totalPts = worked.reduce((s, l) => s + l.pts_val, 0);
+  const rate = totalPts > 0 ? pool / totalPts : 0;
+
+  // Take home per person
+  worked.forEach(l => {
+    l.take_home = l.pts_val * rate;
+  });
+
+  // Update DOM
+  worked.forEach(l => {
+    const pvEl = document.getElementById('epv-' + l.id);
+    const thEl = document.getElementById('eth-' + l.id);
+    if (pvEl) pvEl.textContent = l.pts_val > 0 ? fmtNum(l.pts_val) : '—';
+    if (thEl) {
+      thEl.textContent = l.take_home > 0 ? fmtCRC(l.take_home) : '₡ —';
+      thEl.classList.toggle('zero', !l.take_home);
+    }
+  });
+
+  const dist = worked.reduce((s, l) => s + l.take_home, 0);
+  document.getElementById('pool-total').textContent = fmtCRC(pool);
+  document.getElementById('pool-pts').textContent   = totalPts > 0 ? fmtNum(totalPts) : '0';
+  document.getElementById('pool-rate').textContent  = rate > 0 ? fmtCRC(rate) : '₡ —';
+  document.getElementById('pool-dist').textContent  = fmtCRC(dist);
+}
+
+// ── Meta header ───────────────────────────────────────────────
+function onFechaChange() {
+  DRAFT.fecha = document.getElementById('turno-fecha').value;
+  updateTurnoMeta();
+}
+
+function updateTurnoMeta() {
+  const f = DRAFT.fecha;
+  if (!f) return;
+  const dia  = getDia(f);
+  const sem  = getSemana(f);
+  const d    = parseInt(f.split('-')[2]);
+  const q    = d <= 15 ? 'Q1 (1-15)' : 'Q2 (16-31)';
+  document.getElementById('turno-meta').innerHTML =
+    `<strong>${dia}</strong> · ${sem} · ${q}`;
+}
+
+// ── Guardar turno ─────────────────────────────────────────────
+async function saveTurno() {
+  const worked = DRAFT.lineas.filter(l => l.activo);
+  if (!worked.length) { toast('Marcá quién trabajó primero', 'error'); return; }
+
+  calcTurno();
+
+  const pool = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const totalPts = worked.reduce((s, l) => s + l.pts_val, 0);
+  const rate = totalPts > 0 ? pool / totalPts : 0;
+
+  const datos = {
+    turno: document.getElementById('turno-tipo').value,
+    pool_total: pool,
+    total_pts_val: totalPts,
+    point_rate: rate,
+    lineas: worked.map(l => ({
+      id: l.id, nombre: l.nombre, rol: l.rol,
+      horas: parseFloat(l.horas) || 0,
+      propina_gen: parseFloat(l.propina_gen) || 0,
+      pts_rol: getRolPts(l.rol), pts_val: l.pts_val, take_home: l.take_home
+    }))
+  };
+
+  const payload = {
+    fecha: DRAFT.fecha,
+    dia_semana: getDia(DRAFT.fecha),
+    num_semana: getSemana(DRAFT.fecha),
+    datos
+  };
+
+  setSyncStatus('loading', 'GUARDANDO...');
+  try {
+    const res = await apiPost({ action:'saveTurnoPropinas', data: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(res.error);
+    toast('Turno guardado', 'success');
+    setSyncStatus('ok', 'OK');
+    resetTurno();
+    // Refresh local cache
+    const latest = await apiFetch({ action:'getTurnosPropinas',
+      mes: DRAFT.fecha.split('-')[1], anio: DRAFT.fecha.split('-')[0] });
+    if (latest.ok) {
+      TURNOS_CACHE = latest.data;
+      localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
+    }
+  } catch(e) {
+    setSyncStatus('err', 'ERROR');
+    toast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
+function resetTurno() {
+  DRAFT.lineas.forEach(l => {
+    l.activo = false; l.horas = ''; l.propina_gen = ''; l.pts_val = 0; l.take_home = 0;
+  });
+  renderTurno();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HISTORIAL
+// ═══════════════════════════════════════════════════════════════
+async function loadHistorial() {
+  const mes  = document.getElementById('hist-mes').value;
+  const anio = document.getElementById('hist-anio').value;
+  const el   = document.getElementById('historial-list');
+  el.innerHTML = '<div class="empty">Cargando...</div>';
+
+  try {
+    const res = await apiFetch({ action:'getTurnosPropinas', mes, anio });
+    if (!res.ok) throw new Error(res.error);
+    const turnos = res.data;
+    TURNOS_CACHE = turnos;
+    localStorage.setItem('prop_turnos', JSON.stringify(turnos));
+    renderHistorial(turnos);
+  } catch(e) {
+    renderHistorial(TURNOS_CACHE);
+    toast('Cargando desde caché', 'error');
+  }
+}
+
+function renderHistorial(turnos) {
+  const el = document.getElementById('historial-list');
+  if (!turnos.length) { el.innerHTML = '<div class="empty">No hay turnos registrados para este período.</div>'; return; }
+
+  el.innerHTML = turnos.map(t => {
+    const d = t.datos || {};
+    const pool = d.pool_total || 0;
+    const n = (d.lineas||[]).length;
+    return `
+      <div class="hist-item" onclick="toggleHistItem('${t.id}')">
+        <div class="hist-item-header">
+          <div>
+            <div class="hist-fecha">${t.fecha} · ${t.dia_semana||''} · ${d.turno||'PM'}</div>
+            <div class="hist-meta">${t.num_semana||''} · ${n} empleado${n!==1?'s':''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="hist-total">${fmtCRC(pool)}</div>
+            <button class="btn btn-ghost btn-sm"
+              onclick="event.stopPropagation();openTurnoDetail('${t.id}')">Ver</button>
+          </div>
+        </div>
+        <div class="hist-body" id="hbody-${t.id}">
+          <div class="hist-detail-grid">
+            ${(d.lineas||[]).map(l => `
+              <div class="hist-emp-row">
+                <div>
+                  <div class="hist-emp-name">${l.nombre}</div>
+                  <div class="hist-emp-meta">${rolLabel(l.rol)} · ${l.horas||0}h · ${fmtNum(l.pts_val)} pts</div>
+                </div>
+                <div class="hist-emp-take">${fmtCRC(l.take_home)}</div>
+              </div>`).join('')}
+          </div>
+          <div style="display:flex;gap:20px;margin-top:12px;font-size:9px;color:var(--muted)">
+            <span>Valor/punto: ${fmtCRC(d.point_rate)}</span>
+            <span>Total puntos: ${fmtNum(d.total_pts_val)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleHistItem(id) {
+  const body = document.getElementById('hbody-' + id);
+  if (body) body.classList.toggle('open');
+}
+
+function openTurnoDetail(id) {
+  const t = TURNOS_CACHE.find(x => x.id === id);
+  if (!t) return;
+  TURNO_DETAIL_ID = id;
+  const d = t.datos || {};
+  document.getElementById('modal-det-title').textContent =
+    `${t.fecha} · ${t.dia_semana||''} · ${d.turno||'PM'}`;
+
+  const rows = (d.lineas||[]).map(l => `
+    <tr>
+      <td>${l.nombre}</td>
+      <td>${rolLabel(l.rol)}</td>
+      <td class="r">${l.horas||0}</td>
+      <td class="r">${fmtCRC(l.propina_gen)}</td>
+      <td class="r">${fmtNum(l.pts_val)}</td>
+      <td class="r">${fmtCRC(l.take_home)}</td>
+    </tr>`).join('');
+
+  document.getElementById('modal-det-body').innerHTML = `
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>Empleado</th><th>Rol</th>
+          <th class="r">Horas</th><th class="r">Propinas gen.</th>
+          <th class="r">Puntos</th><th class="r">Take Home</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:20px;font-size:10px;margin-top:8px">
+      <span>Pool: <strong>${fmtCRC(d.pool_total)}</strong></span>
+      <span>Valor/punto: <strong>${fmtCRC(d.point_rate)}</strong></span>
+    </div>`;
+  openModal('modal-turno-det');
+}
+
+async function deleteTurnoFromModal() {
+  if (!TURNO_DETAIL_ID) return;
+  if (!confirm('¿Eliminar este turno?')) return;
+  try {
+    const res = await apiPost({ action:'deleteTurnoPropinas', id: TURNO_DETAIL_ID });
+    if (!res.ok) throw new Error(res.error);
+    TURNOS_CACHE = TURNOS_CACHE.filter(t => t.id !== TURNO_DETAIL_ID);
+    localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
+    closeModal('modal-turno-det');
+    renderHistorial(TURNOS_CACHE);
+    toast('Turno eliminado', 'success');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESUMEN
+// ═══════════════════════════════════════════════════════════════
+async function loadResumen() {
+  const mes  = document.getElementById('res-mes').value;
+  const anio = document.getElementById('res-anio').value;
+
+  document.getElementById('resumen-content').innerHTML = '<div class="empty">Calculando...</div>';
+  document.getElementById('res-kpis').innerHTML = '';
+
+  try {
+    const res = await apiFetch({ action:'getTurnosPropinas', mes, anio });
+    if (!res.ok) throw new Error(res.error);
+    renderResumen(res.data, mes, anio);
+  } catch(e) {
+    renderResumen(TURNOS_CACHE, mes, anio);
+    toast('Usando caché local', 'error');
+  }
+}
+
+function renderResumen(turnos, mes, anio) {
+  // Aggregate by employee name
+  const byEmp = {};
+
+  turnos.forEach(t => {
+    const day = parseInt((t.fecha || '').split('-')[2] || '0');
+    const isQ1 = day >= 1 && day <= 15;
+    (t.datos?.lineas || []).forEach(l => {
+      if (!l.nombre || !l.take_home) return;
+      const key = l.nombre + '|' + l.rol;
+      if (!byEmp[key]) byEmp[key] = {
+        nombre: l.nombre, rol: l.rol, total: 0,
+        q1days: 0, q2days: 0, q1earn: 0, q2earn: 0,
+        gen_total: 0
+      };
+      const e = byEmp[key];
+      e.total    += l.take_home;
+      e.gen_total+= l.propina_gen || 0;
+      if (isQ1) { e.q1days++; e.q1earn += l.take_home; }
+      else       { e.q2days++; e.q2earn += l.take_home; }
+    });
+  });
+
+  const empList = Object.values(byEmp).map(e => ({
+    ...e,
+    q1avg: e.q1days > 0 ? e.q1earn / e.q1days : null,
+    q2avg: e.q2days > 0 ? e.q2earn / e.q2days : null,
+    avg:   (e.q1days + e.q2days) > 0 ? e.total / (e.q1days + e.q2days) : null
+  }));
+
+  const totalMes    = empList.reduce((s, e) => s + e.total, 0);
+  const totalTurnos = turnos.length;
+  const poolMes     = turnos.reduce((s, t) => s + (t.datos?.pool_total || 0), 0);
+
+  // KPIs
+  document.getElementById('res-kpis').innerHTML = `
+    <div class="kpi-card gold">
+      <div class="kpi-label">Total propinas del mes</div>
+      <div class="kpi-val gold">${fmtCRC(poolMes)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total distribuido</div>
+      <div class="kpi-val">${fmtCRC(totalMes)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Turnos registrados</div>
+      <div class="kpi-val">${totalTurnos}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Empleados con propinas</div>
+      <div class="kpi-val">${empList.length}</div>
+    </div>`;
+
+  if (!empList.length) {
+    document.getElementById('resumen-content').innerHTML =
+      '<div class="empty">No hay datos para este período.</div>';
+    return;
+  }
+
+  // Build sections by role
+  let html = '';
+  ROL_ORDER.forEach(rol => {
+    const emps = empList.filter(e => e.rol === rol);
+    if (!emps.length) return;
+
+    emps.sort((a,b) => b.total - a.total);
+    const secTotal = emps.reduce((s,e) => s + e.total, 0);
+
+    html += `
+      <div class="res-section">
+        <div class="res-section-hdr">
+          <span>${ROL_NAMES[rol]}</span>
+          <span>${fmtCRC(secTotal)}</span>
+        </div>
+        <div class="res-hdr-row">
+          <span>Nombre</span>
+          <span></span>
+          <span style="text-align:center">Días Q1</span>
+          <span style="text-align:center">Días Q2</span>
+          <span style="text-align:right">Prom Q1</span>
+          <span style="text-align:right">Prom Q2</span>
+          <span style="text-align:right">Total mes</span>
+        </div>
+        ${emps.map(e => `
+          <div class="res-row">
+            <span>${e.nombre}</span>
+            <span></span>
+            <span class="res-col-c">${e.q1days}</span>
+            <span class="res-col-c">${e.q2days}</span>
+            <span class="res-col-r">${e.q1avg ? fmtCRC(e.q1avg) : '—'}</span>
+            <span class="res-col-r">${e.q2avg ? fmtCRC(e.q2avg) : '—'}</span>
+            <span class="res-col-r">${fmtCRC(e.total)}</span>
+          </div>`).join('')}
+        <div class="res-row total-row">
+          <span>TOTAL ${ROL_NAMES[rol].toUpperCase()}</span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span class="res-col-r">${fmtCRC(secTotal)}</span>
+        </div>
+      </div>`;
+  });
+
+  // Global total
+  html += `
+    <div class="res-section">
+      <div class="res-row total-row" style="background:#0a0a0a;color:#7ec8b8">
+        <span>TOTAL STAFF</span><span></span><span></span><span></span>
+        <span></span><span></span>
+        <span class="res-col-r">${fmtCRC(totalMes)}</span>
+      </div>
+    </div>`;
+
+  document.getElementById('resumen-content').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN
+// ═══════════════════════════════════════════════════════════════
+function renderAdmin() {
+  renderAdminEmps();
+  renderAdminRoles();
+}
+
+function renderAdminEmps() {
+  const el = document.getElementById('admin-emp-list');
+  const all = [...EMPLEADOS].sort((a,b) => {
+    const ri = ROL_ORDER.indexOf(a.rol) - ROL_ORDER.indexOf(b.rol);
+    return ri !== 0 ? ri : (a.nombre||'').localeCompare(b.nombre||'');
+  });
+
+  if (!all.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px">Sin empleados aún.</div>';
+    return;
+  }
+
+  el.innerHTML = all.map(e => `
+    <div class="admin-emp-row">
+      <div>
+        <div class="admin-emp-name">${e.nombre}
+          ${!e.activo || e.activo === 'false' ? '<span style="font-size:8px;color:#aaa;margin-left:6px">INACTIVO</span>' : ''}
+        </div>
+        <div style="margin-top:3px">${rolBadge(e.rol, e.activo !== false && e.activo !== 'false')}</div>
+      </div>
+      <div class="admin-emp-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openEmpModal('${e.id}')">Editar</button>
+        <button class="btn btn-red btn-sm" onclick="deleteEmp('${e.id}')">×</button>
+      </div>
+    </div>`).join('');
+
+  // Re-add button at bottom
+  el.innerHTML += `<button class="btn-add" onclick="openEmpModal()">+ Agregar empleado</button>`;
+}
+
+function renderAdminRoles() {
+  const el = document.getElementById('admin-roles-list');
+  const all = ROLES_ORDER_ADMIN();
+  el.innerHTML = all.map(r => `
+    <div class="admin-role-row">
+      <div>
+        <div class="admin-role-name">${rolLabel(r.rol)}</div>
+        <div style="font-size:8px;color:var(--muted);margin-top:2px">puntos × horas = valor individual</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" class="admin-pts-input" id="rpts-${r.rol}"
+          value="${r.puntos}" min="0" max="100" step="1">
+        <button class="btn btn-ghost btn-sm" onclick="saveRol('${r.rol}')">OK</button>
+      </div>
+    </div>`).join('');
+}
+
+function ROLES_ORDER_ADMIN() {
+  return ROL_ORDER.map(rol => {
+    const found = ROLES_DATA.find(r => r.rol === rol);
+    return found || { rol, puntos: ROLES_DEFAULTS[rol] || 0 };
+  });
+}
+
+// ── Empleado Modal ────────────────────────────────────────────
+function openEmpModal(id) {
+  const rolOpts = ROL_ORDER.map(r =>
+    `<option value="${r}">${rolLabel(r)}</option>`).join('');
+  document.getElementById('emp-rol').innerHTML = rolOpts;
+
+  if (id) {
+    const e = EMPLEADOS.find(x => x.id === id);
+    if (!e) return;
+    document.getElementById('modal-emp-title').textContent = 'Editar Empleado';
+    document.getElementById('emp-edit-id').value = e.id;
+    document.getElementById('emp-nombre').value  = e.nombre;
+    document.getElementById('emp-rol').value     = e.rol;
+    document.getElementById('emp-activo').value  = String(e.activo !== false && e.activo !== 'false');
+  } else {
+    document.getElementById('modal-emp-title').textContent = 'Nuevo Empleado';
+    document.getElementById('emp-edit-id').value = '';
+    document.getElementById('emp-nombre').value  = '';
+    document.getElementById('emp-rol').value     = 'salonero';
+    document.getElementById('emp-activo').value  = 'true';
+  }
+  openModal('modal-emp');
+}
+
+async function saveEmp() {
+  const nombre = document.getElementById('emp-nombre').value.trim().toUpperCase();
+  const rol    = document.getElementById('emp-rol').value;
+  const activo = document.getElementById('emp-activo').value === 'true';
+  const id     = document.getElementById('emp-edit-id').value;
+
+  if (!nombre) { toast('Ingresá el nombre', 'error'); return; }
+
+  const data = { nombre, rol, activo };
+  if (id) data.id = id;
+
+  try {
+    const res = await apiPost({ action:'saveEmpleadoPropinas', data: JSON.stringify(data) });
+    if (!res.ok) throw new Error(res.error);
+
+    // Update local cache
+    if (id) {
+      const idx = EMPLEADOS.findIndex(e => e.id === id);
+      if (idx >= 0) EMPLEADOS[idx] = { ...EMPLEADOS[idx], ...data };
+    } else {
+      EMPLEADOS.push({ id: res.id, ...data });
+    }
+    localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
+
+    closeModal('modal-emp');
+    renderAdmin();
+    renderTurno();
+    toast(id ? 'Empleado actualizado' : 'Empleado agregado', 'success');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function deleteEmp(id) {
+  const e = EMPLEADOS.find(x => x.id === id);
+  if (!e || !confirm(`¿Eliminar a ${e.nombre}?`)) return;
+  try {
+    const res = await apiPost({ action:'deleteEmpleadoPropinas', id });
+    if (!res.ok) throw new Error(res.error);
+    EMPLEADOS = EMPLEADOS.filter(x => x.id !== id);
+    localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
+    renderAdmin();
+    renderTurno();
+    toast('Empleado eliminado', 'success');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Roles ─────────────────────────────────────────────────────
+async function saveRol(rol) {
+  const pts = parseFloat(document.getElementById('rpts-' + rol).value);
+  if (isNaN(pts) || pts < 0) { toast('Valor inválido', 'error'); return; }
+  try {
+    const res = await apiPost({ action:'saveRolPropinas', data: JSON.stringify({ rol, puntos: pts }) });
+    if (!res.ok) throw new Error(res.error);
+    const idx = ROLES_DATA.findIndex(r => r.rol === rol);
+    if (idx >= 0) ROLES_DATA[idx].puntos = pts;
+    else ROLES_DATA.push({ rol, puntos: pts });
+    localStorage.setItem('prop_roles', JSON.stringify(ROLES_DATA));
+    renderTurno();
+    toast(`${rolLabel(rol)}: ${pts} pts guardado`, 'success');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODAL & TOAST
+// ═══════════════════════════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+let _toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
