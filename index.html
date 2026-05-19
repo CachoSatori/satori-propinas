@@ -676,7 +676,7 @@ async function apiFetch(params) {
 async function apiPost(data) {
   const r = await fetch(API_URL, {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'text/plain'}, // text/plain evita CORS preflight
     body: JSON.stringify({ key: SECRET, ...data })
   });
   return r.json();
