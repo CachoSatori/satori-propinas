@@ -573,9 +573,29 @@ function fmtNum(n) {
 
 const ROLES_DEFAULTS = { salonero:10, barman:5, barback:4, runner:3, cocina:5, manager:3 };
 
+// Normaliza variaciones de nombre de rol al valor canónico
+const ROL_ALIAS = {
+  salonero:['salonero','server','mozo','mesero','waiter'],
+  barman:  ['barman','bartender','barra','bar'],
+  barback: ['barback','bar back','ayudante barra'],
+  runner:  ['runner','busser','busboy','ayudante'],
+  cocina:  ['cocina','cocinero','cocinera','chef','kitchen','cook'],
+  manager: ['manager','gerente','cajero','caja','supervisor'],
+};
+
+function normalizarRol(rol) {
+  if (!rol) return null;
+  const r = rol.toString().toLowerCase().trim();
+  for (const [canon, aliases] of Object.entries(ROL_ALIAS)) {
+    if (aliases.includes(r)) return canon;
+  }
+  return ROL_ORDER.includes(r) ? r : null;
+}
+
 function getRolPts(rol) {
-  const r = ROLES_DATA.find(x => x.rol === rol);
-  return r ? Number(r.puntos) : (ROLES_DEFAULTS[rol] || 0);
+  const norm = normalizarRol(rol) || rol;
+  const r = ROLES_DATA.find(x => x.rol === norm);
+  return r ? Number(r.puntos) : (ROLES_DEFAULTS[norm] || 0);
 }
 
 function rolBadge(rol, activo = true) {
@@ -617,6 +637,15 @@ function setSyncStatus(status, msg) {
   el.textContent = '● ' + (msg || 'SYNC');
 }
 
+function genId() {
+  return 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function saveLocal() {
+  localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
+  localStorage.setItem('prop_roles',     JSON.stringify(ROLES_DATA));
+}
+
 // ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
@@ -643,21 +672,26 @@ async function syncAll() {
       apiFetch({ action:'getEmpleadosPropinas' }),
       apiFetch({ action:'getRolesPropinas' })
     ]);
-    if (eRes.ok) {
-      EMPLEADOS = eRes.data;
+    if (eRes.ok && eRes.data) {
+      // Merge: keep local-only employees not yet pushed to backend
+      const backendIds = new Set(eRes.data.map(e => String(e.id)));
+      const localOnly  = EMPLEADOS.filter(e => !backendIds.has(String(e.id)));
+      EMPLEADOS = [...eRes.data, ...localOnly];
       localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
     }
-    if (rRes.ok) {
+    if (rRes.ok && rRes.data && rRes.data.length) {
       ROLES_DATA = rRes.data;
       localStorage.setItem('prop_roles', JSON.stringify(ROLES_DATA));
     }
     setSyncStatus('ok', 'OK');
     renderTurno();
     renderAdmin();
-    toast('Datos sincronizados', 'success');
+    toast('Sincronizado con Google Sheets', 'success');
   } catch(e) {
-    setSyncStatus('err', 'SIN CONEXIÓN');
-    toast('Sin conexión — usando caché local', 'error');
+    setSyncStatus('err', 'OFFLINE');
+    // Use local cache silently
+    renderTurno();
+    renderAdmin();
   }
 }
 
@@ -669,6 +703,7 @@ function showView(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   document.querySelector(`.nav-tab[data-view="${name}"]`).classList.add('active');
+  if (name === 'turno')     renderTurno();
   if (name === 'historial') loadHistorial();
   if (name === 'resumen')   loadResumen();
   if (name === 'admin')     renderAdmin();
@@ -684,20 +719,22 @@ const ROL_NAMES = {
 };
 
 function renderTurno() {
-  const activos = EMPLEADOS.filter(e => e.activo !== false && e.activo !== 'false');
+  // Normalizar roles al cargar
+  const activos = EMPLEADOS
+    .filter(e => e.activo !== false && e.activo !== 'false')
+    .map(e => ({ ...e, rol: normalizarRol(e.rol) || e.rol }));
+
   const container = document.getElementById('turno-sections');
 
   // Sync draft lineas: add new employees, keep existing values
-  ROL_ORDER.forEach(rol => {
-    activos.filter(e => e.rol === rol).forEach(emp => {
-      if (!DRAFT.lineas.find(l => l.id === emp.id)) {
-        DRAFT.lineas.push({
-          id: emp.id, nombre: emp.nombre, rol: emp.rol,
-          activo: false, horas: '', propina_gen: '', pts_rol: getRolPts(emp.rol),
-          pts_val: 0, take_home: 0
-        });
-      }
-    });
+  activos.forEach(emp => {
+    if (!DRAFT.lineas.find(l => l.id === emp.id)) {
+      DRAFT.lineas.push({
+        id: emp.id, nombre: emp.nombre, rol: emp.rol,
+        activo: false, horas: '', propina_gen: '', pts_rol: getRolPts(emp.rol),
+        pts_val: 0, take_home: 0
+      });
+    }
   });
   // Remove from draft employees no longer active
   DRAFT.lineas = DRAFT.lineas.filter(l => activos.find(e => e.id === l.id));
@@ -849,9 +886,9 @@ async function saveTurno() {
 
   calcTurno();
 
-  const pool = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const pool     = worked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
   const totalPts = worked.reduce((s, l) => s + l.pts_val, 0);
-  const rate = totalPts > 0 ? pool / totalPts : 0;
+  const rate     = totalPts > 0 ? pool / totalPts : 0;
 
   const datos = {
     turno: document.getElementById('turno-tipo').value,
@@ -866,30 +903,30 @@ async function saveTurno() {
     }))
   };
 
+  const turnoId = genId();
   const payload = {
+    id: turnoId,
     fecha: DRAFT.fecha,
     dia_semana: getDia(DRAFT.fecha),
     num_semana: getSemana(DRAFT.fecha),
     datos
   };
 
-  setSyncStatus('loading', 'GUARDANDO...');
+  // ── 1. Guardar localmente de inmediato ──────────────────────
+  const localEntry = { ...payload, created_at: new Date().toISOString() };
+  TURNOS_CACHE.unshift(localEntry);
+  localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
+  toast('Turno guardado', 'success');
+  resetTurno();
+
+  // ── 2. Intentar sync con backend en background ──────────────
+  setSyncStatus('loading', 'SYNC...');
   try {
     const res = await apiPost({ action:'saveTurnoPropinas', data: JSON.stringify(payload) });
-    if (!res.ok) throw new Error(res.error);
-    toast('Turno guardado', 'success');
-    setSyncStatus('ok', 'OK');
-    resetTurno();
-    // Refresh local cache
-    const latest = await apiFetch({ action:'getTurnosPropinas',
-      mes: DRAFT.fecha.split('-')[1], anio: DRAFT.fecha.split('-')[0] });
-    if (latest.ok) {
-      TURNOS_CACHE = latest.data;
-      localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
-    }
-  } catch(e) {
-    setSyncStatus('err', 'ERROR');
-    toast('Error al guardar: ' + e.message, 'error');
+    if (res.ok) setSyncStatus('ok', 'OK');
+    else setSyncStatus('err', 'OFFLINE');
+  } catch(_) {
+    setSyncStatus('err', 'OFFLINE');
   }
 }
 
@@ -1252,63 +1289,70 @@ async function saveEmp() {
 
   if (!nombre) { toast('Ingresá el nombre', 'error'); return; }
 
-  const data = { nombre, rol, activo };
-  if (id) data.id = id;
-
-  try {
-    const res = await apiPost({ action:'saveEmpleadoPropinas', data: JSON.stringify(data) });
-    if (!res.ok) throw new Error(res.error);
-
-    // Update local cache
-    if (id) {
-      const idx = EMPLEADOS.findIndex(e => e.id === id);
-      if (idx >= 0) EMPLEADOS[idx] = { ...EMPLEADOS[idx], ...data };
-    } else {
-      EMPLEADOS.push({ id: res.id, ...data });
-    }
-    localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
-
-    closeModal('modal-emp');
-    renderAdmin();
-    renderTurno();
-    toast(id ? 'Empleado actualizado' : 'Empleado agregado', 'success');
-  } catch(e) {
-    toast('Error: ' + e.message, 'error');
+  // ── 1. Guardar localmente de inmediato ──────────────────────
+  const empId = id || genId();
+  if (id) {
+    const idx = EMPLEADOS.findIndex(e => e.id === id);
+    if (idx >= 0) EMPLEADOS[idx] = { id, nombre, rol, activo };
+    else EMPLEADOS.push({ id, nombre, rol, activo });
+  } else {
+    EMPLEADOS.push({ id: empId, nombre, rol, activo });
   }
+  saveLocal();
+  closeModal('modal-emp');
+  renderAdmin();
+  renderTurno();
+  toast(id ? 'Empleado actualizado' : 'Empleado agregado', 'success');
+
+  // ── 2. Intentar sync con backend en background ──────────────
+  try {
+    const payload = { id: empId, nombre, rol, activo };
+    const res = await apiPost({ action:'saveEmpleadoPropinas', data: JSON.stringify(payload) });
+    if (res.ok && res.id && res.id !== empId) {
+      // El backend generó un UUID distinto — actualizar
+      const idx = EMPLEADOS.findIndex(e => e.id === empId);
+      if (idx >= 0) EMPLEADOS[idx].id = res.id;
+      const dl = DRAFT.lineas.find(l => l.id === empId);
+      if (dl) dl.id = res.id;
+      saveLocal();
+    }
+  } catch(_) { /* offline — queda en local */ }
 }
 
 async function deleteEmp(id) {
-  const e = EMPLEADOS.find(x => x.id === id);
-  if (!e || !confirm(`¿Eliminar a ${e.nombre}?`)) return;
+  const emp = EMPLEADOS.find(x => x.id === id);
+  if (!emp || !confirm(`¿Eliminar a ${emp.nombre}?`)) return;
+
+  // ── 1. Eliminar localmente de inmediato ─────────────────────
+  EMPLEADOS = EMPLEADOS.filter(x => x.id !== id);
+  saveLocal();
+  renderAdmin();
+  renderTurno();
+  toast('Empleado eliminado', 'success');
+
+  // ── 2. Intentar sync con backend en background ──────────────
   try {
-    const res = await apiPost({ action:'deleteEmpleadoPropinas', id });
-    if (!res.ok) throw new Error(res.error);
-    EMPLEADOS = EMPLEADOS.filter(x => x.id !== id);
-    localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
-    renderAdmin();
-    renderTurno();
-    toast('Empleado eliminado', 'success');
-  } catch(e) {
-    toast('Error: ' + e.message, 'error');
-  }
+    await apiPost({ action:'deleteEmpleadoPropinas', id });
+  } catch(_) { /* offline */ }
 }
 
 // ── Roles ─────────────────────────────────────────────────────
 async function saveRol(rol) {
   const pts = parseFloat(document.getElementById('rpts-' + rol).value);
   if (isNaN(pts) || pts < 0) { toast('Valor inválido', 'error'); return; }
+
+  // ── 1. Guardar localmente de inmediato ──────────────────────
+  const idx = ROLES_DATA.findIndex(r => r.rol === rol);
+  if (idx >= 0) ROLES_DATA[idx].puntos = pts;
+  else ROLES_DATA.push({ rol, puntos: pts });
+  saveLocal();
+  renderTurno();
+  toast(`${rolLabel(rol)}: ${pts} pts guardado`, 'success');
+
+  // ── 2. Intentar sync con backend en background ──────────────
   try {
-    const res = await apiPost({ action:'saveRolPropinas', data: JSON.stringify({ rol, puntos: pts }) });
-    if (!res.ok) throw new Error(res.error);
-    const idx = ROLES_DATA.findIndex(r => r.rol === rol);
-    if (idx >= 0) ROLES_DATA[idx].puntos = pts;
-    else ROLES_DATA.push({ rol, puntos: pts });
-    localStorage.setItem('prop_roles', JSON.stringify(ROLES_DATA));
-    renderTurno();
-    toast(`${rolLabel(rol)}: ${pts} pts guardado`, 'success');
-  } catch(e) {
-    toast('Error: ' + e.message, 'error');
-  }
+    await apiPost({ action:'saveRolPropinas', data: JSON.stringify({ rol, puntos: pts }) });
+  } catch(_) { /* offline */ }
 }
 
 // ═══════════════════════════════════════════════════════════════
