@@ -1052,10 +1052,17 @@ async function saveTurno() {
   setSyncStatus('loading', 'SYNC...');
   try {
     const res = await apiPost({ action:'saveTurnoPropinas', data: JSON.stringify(payload) });
-    if (res.ok) setSyncStatus('ok', 'OK');
-    else setSyncStatus('err', 'OFFLINE');
-  } catch(_) {
+    if (res.ok) {
+      setSyncStatus('ok', 'OK');
+    } else {
+      setSyncStatus('err', 'ERR');
+      toast('⚠ Turno NO guardado en Sheets: ' + (res.error || 'error'), 'error');
+      console.error('saveTurno error:', res);
+    }
+  } catch(err) {
     setSyncStatus('err', 'OFFLINE');
+    toast('⚠ Sin conexión con Sheets al guardar turno', 'error');
+    console.error('saveTurno fetch error:', err);
   }
 }
 
