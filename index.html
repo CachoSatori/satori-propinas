@@ -729,6 +729,10 @@ async function syncAll() {
       const localOnly  = EMPLEADOS.filter(e => !backendIds.has(String(e.id)));
       EMPLEADOS = [...eRes.data, ...localOnly];
       localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
+      // Push local-only employees up to backend
+      localOnly.forEach(emp => {
+        apiPost({ action: 'saveEmpleado', data: emp }).catch(() => {});
+      });
     }
     if (rRes.ok && rRes.data && rRes.data.length) {
       ROLES_DATA = rRes.data;
