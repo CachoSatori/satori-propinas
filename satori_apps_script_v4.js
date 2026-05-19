@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
-// SATORI · Google Apps Script Backend v4.0
+// SATORI · Google Apps Script Backend v4.1
 // Incluye: Dashboard de Ventas (v2.4) + Módulo Caja (v1.0)
-//          + Módulo Propinas (v1.0)  ← NUEVO
+//          + Módulo Propinas (v1.0) + Lista unificada de empleados
 // ═══════════════════════════════════════════════════════════════
 
 // ── Hojas: Dashboard Ventas ───────────────────────────────────
@@ -18,8 +18,10 @@ const SHEET_MOVS           = 'movimientos';
 const SHEET_PROV_CAJA      = 'proveedores_caja';
 const SHEET_CATS_CAJA      = 'categorias_caja';
 
+// ── Lista unificada de empleados (todos los módulos) ──────────
+const SHEET_EMPLEADOS      = 'empleados';
+
 // ── Hojas: Módulo Propinas ────────────────────────────────────
-const SHEET_PROP_EMPLEADOS = 'propinas_empleados';
 const SHEET_PROP_ROLES     = 'propinas_roles';
 const SHEET_PROP_TURNOS    = 'propinas_turnos';
 
@@ -65,8 +67,10 @@ function doGet(e) {
     else if (action === 'getMovimientos')  result = getMovimientos(params);
     else if (action === 'getProvCaja')     result = getProvCaja();
     else if (action === 'getCatsCaja')     result = getCatsCaja();
+    // ── Empleados unificados (todos los módulos) ─────────────
+    else if (action === 'getEmpleados')         result = getEmpleados();
     // ── Módulo Propinas ───────────────────────────────────────
-    else if (action === 'getEmpleadosPropinas') result = getEmpleadosPropinas();
+    else if (action === 'getEmpleadosPropinas') result = getEmpleados();
     else if (action === 'getRolesPropinas')     result = getRolesPropinas();
     else if (action === 'getTurnosPropinas')    result = getTurnosPropinas(params);
 
@@ -110,13 +114,16 @@ function doPost(e) {
     else if (action === 'deleteProvCaja')  result = deleteProvCaja(params.id);
     else if (action === 'saveCatCaja')     result = saveCatCaja(params.data);
     else if (action === 'deleteCatCaja')   result = deleteCatCaja(params.id);
+    // ── Empleados unificados (todos los módulos) ─────────────
+    else if (action === 'saveEmpleado')              result = saveEmpleado(params.data);
+    else if (action === 'deleteEmpleado')            result = deleteEmpleado(params.id);
+    else if (action === 'syncEmpleadosDashboard')    result = syncEmpleadosDashboard(params.nombres);
     // ── Módulo Propinas ───────────────────────────────────────
-    else if (action === 'saveEmpleadoPropinas')      result = saveEmpleadoPropinas(params.data);
-    else if (action === 'deleteEmpleadoPropinas')    result = deleteEmpleadoPropinas(params.id);
+    else if (action === 'saveEmpleadoPropinas')      result = saveEmpleado(params.data);
+    else if (action === 'deleteEmpleadoPropinas')    result = deleteEmpleado(params.id);
     else if (action === 'saveRolPropinas')            result = saveRolPropinas(params.data);
     else if (action === 'saveTurnoPropinas')          result = saveTurnoPropinas(params.data);
     else if (action === 'deleteTurnoPropinas')        result = deleteTurnoPropinas(params.id);
-    else if (action === 'syncEmpleadosDashboard')    result = syncEmpleadosDashboard(params.nombres);
 
     output.setContent(JSON.stringify(result));
   } catch(err) {
@@ -162,6 +169,42 @@ function initSheets() {
       }
     }
   });
+
+  // ── Empleados unificados ─────────────────────────────────
+  if (!ss.getSheetByName(SHEET_EMPLEADOS)) {
+    const ws = ss.insertSheet(SHEET_EMPLEADOS);
+    ws.getRange(1,1,1,4).setValues([['id','nombre','rol','activo']]);
+    ws.setFrozenRows(1);
+    // Migrar datos de propinas_empleados si existen
+    const oldSheet = ss.getSheetByName('propinas_empleados');
+    if (oldSheet && oldSheet.getLastRow() >= 2) {
+      const oldData = oldSheet.getRange(2, 1, oldSheet.getLastRow() - 1, 4).getValues();
+      const existing = new Set();
+      oldData.forEach(r => {
+        if (!r[0]) return;
+        const norm = String(r[1]).toUpperCase().trim();
+        if (existing.has(norm)) return;
+        existing.add(norm);
+        ws.appendRow([r[0], String(r[1]).toUpperCase().trim(), r[2] || 'sin_asignar', r[3] !== false]);
+      });
+    }
+    // Migrar datos de empleados de Caja si existen
+    const cajaSheet = ss.getSheetByName('empleados_caja');
+    if (cajaSheet && cajaSheet.getLastRow() >= 2) {
+      const cajaData = cajaSheet.getRange(2, 1, cajaSheet.getLastRow() - 1, 3).getValues();
+      const wsRows = ws.getLastRow() >= 2
+        ? ws.getRange(2, 1, ws.getLastRow() - 1, 2).getValues().map(r => String(r[1]).toUpperCase().trim())
+        : [];
+      const existing = new Set(wsRows);
+      cajaData.forEach(r => {
+        if (!r[0]) return;
+        const norm = String(r[1]).toUpperCase().trim();
+        if (existing.has(norm)) return;
+        existing.add(norm);
+        ws.appendRow([Utilities.getUuid(), norm, r[2] || 'sin_asignar', true]);
+      });
+    }
+  }
 
   // ── Módulo Caja ──────────────────────────────────────────
   if (!ss.getSheetByName(SHEET_TURNOS)) {
@@ -811,33 +854,36 @@ function deleteCatCaja(id) {
 // ══════════════════════════════════════════════════════════════
 // MÓDULO PROPINAS: EMPLEADOS
 // ══════════════════════════════════════════════════════════════
-function getEmpleadosPropinas() {
+// ══════════════════════════════════════════════════════════════
+// EMPLEADOS — lista unificada (Dashboard · Caja · Propinas)
+// ══════════════════════════════════════════════════════════════
+function _getEmpSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let ws = ss.getSheetByName(SHEET_PROP_EMPLEADOS);
+  let ws = ss.getSheetByName(SHEET_EMPLEADOS);
   if (!ws) {
-    ws = ss.insertSheet(SHEET_PROP_EMPLEADOS);
-    ws.appendRow(['id', 'nombre', 'rol', 'activo']);
-    return { ok: true, data: [] };
+    ws = ss.insertSheet(SHEET_EMPLEADOS);
+    ws.getRange(1,1,1,4).setValues([['id','nombre','rol','activo']]);
+    ws.setFrozenRows(1);
   }
-  if (ws.getLastRow() < 2) return { ok: true, data: [] };
-  const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 4).getValues();
-  return {
-    ok: true,
-    data: rows.filter(r => r[0]).map(r => ({
-      id: String(r[0]), nombre: r[1], rol: r[2],
-      activo: r[3] !== false && r[3] !== 'FALSE' && r[3] !== false
-    }))
-  };
+  return ws;
 }
 
-function saveEmpleadoPropinas(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let ws = ss.getSheetByName(SHEET_PROP_EMPLEADOS);
-  if (!ws) {
-    ws = ss.insertSheet(SHEET_PROP_EMPLEADOS);
-    ws.appendRow(['id', 'nombre', 'rol', 'activo']);
-  }
+function getEmpleados() {
+  const ws = _getEmpSheet();
+  if (ws.getLastRow() < 2) return { ok: true, data: [], empleados: [] };
+  const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 4).getValues();
+  const data = rows.filter(r => r[0]).map(r => ({
+    id: String(r[0]), nombre: String(r[1]),
+    rol: r[2] || 'sin_asignar',
+    activo: r[3] !== false && r[3] !== 'FALSE'
+  }));
+  return { ok: true, data, empleados: data };
+}
+
+function saveEmpleado(data) {
+  const ws = _getEmpSheet();
   const d = typeof data === 'string' ? JSON.parse(data) : data;
+  const nombre = String(d.nombre || '').toUpperCase().trim();
   const activo = d.activo !== false && d.activo !== 'false';
   if (d.id) {
     const lastRow = ws.getLastRow();
@@ -845,25 +891,33 @@ function saveEmpleadoPropinas(data) {
       const ids = ws.getRange(2, 1, lastRow - 1, 1).getValues();
       for (let i = 0; i < ids.length; i++) {
         if (String(ids[i][0]) === String(d.id)) {
-          ws.getRange(i + 2, 1, 1, 4).setValues([[d.id, d.nombre, d.rol, activo]]);
+          ws.getRange(i + 2, 1, 1, 4).setValues([[d.id, nombre, d.rol || 'sin_asignar', activo]]);
           return { ok: true };
         }
       }
     }
   }
   const newId = d.id || Utilities.getUuid();
-  ws.appendRow([newId, d.nombre, d.rol, activo]);
+  ws.appendRow([newId, nombre, d.rol || 'sin_asignar', activo]);
   return { ok: true, id: newId };
+}
+
+function deleteEmpleado(id) {
+  const ws = _getEmpSheet();
+  if (ws.getLastRow() < 2) return { ok: false, error: 'Not found' };
+  const ids = ws.getRange(2, 1, ws.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(id)) {
+      ws.deleteRow(i + 2);
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'Not found' };
 }
 
 function syncEmpleadosDashboard(nombres) {
   if (!nombres || !Array.isArray(nombres)) return { ok: false, error: 'nombres must be array' };
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let ws = ss.getSheetByName(SHEET_PROP_EMPLEADOS);
-  if (!ws) {
-    ws = ss.insertSheet(SHEET_PROP_EMPLEADOS);
-    ws.appendRow(['id', 'nombre', 'rol', 'activo']);
-  }
+  const ws = _getEmpSheet();
   const existing = new Set();
   if (ws.getLastRow() >= 2) {
     const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 2).getValues();
@@ -878,20 +932,6 @@ function syncEmpleadosDashboard(nombres) {
     added.push(norm);
   });
   return { ok: true, added };
-}
-
-function deleteEmpleadoPropinas(id) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ws = ss.getSheetByName(SHEET_PROP_EMPLEADOS);
-  if (!ws || ws.getLastRow() < 2) return { ok: false, error: 'Not found' };
-  const ids = ws.getRange(2, 1, ws.getLastRow() - 1, 1).getValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) {
-      ws.deleteRow(i + 2);
-      return { ok: true };
-    }
-  }
-  return { ok: false, error: 'Not found' };
 }
 
 // ══════════════════════════════════════════════════════════════
