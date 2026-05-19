@@ -1085,22 +1085,21 @@ async function loadHistorial() {
   el.innerHTML = '<div class="empty">Cargando...</div>';
 
   try {
-    // Fetch sin filtro → backend devuelve todo, filtramos client-side
-    // (funciona con cualquier versión del script: Date objects se serializan
-    // como ISO strings y "2026-05-19T..." empieza con "2026-05")
     const res = await apiFetch({ action:'getTurnosPropinas' });
-    if (!res.ok) throw new Error(res.error);
+    if (!res.ok) throw new Error(res.error || JSON.stringify(res));
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
     const todos  = res.data || [];
     TURNOS_CACHE = todos;
     localStorage.setItem('prop_turnos', JSON.stringify(todos));
     const turnos = todos.filter(t => String(t.fecha || '').startsWith(prefix));
+    // DEBUG: mostrar qué trajo el backend
+    toast(`Backend: ${todos.length} total, ${turnos.length} en ${prefix}. Fecha[0]: ${todos[0]?.fecha ?? 'N/A'}`, turnos.length ? 'success' : 'error');
     renderHistorial(turnos);
   } catch(e) {
+    toast('Error API: ' + e.message, 'error');
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
     const turnos = TURNOS_CACHE.filter(t => String(t.fecha || '').startsWith(prefix));
     renderHistorial(turnos.length ? turnos : TURNOS_CACHE);
-    toast('Cargando desde caché', 'error');
   }
 }
 
