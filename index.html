@@ -401,7 +401,12 @@ header {
     <div class="turno-config">
       <div class="form-group">
         <div class="form-label">Fecha</div>
-        <input type="date" class="form-input dark" id="turno-fecha" oninput="onFechaChange()">
+        <div style="position:relative;cursor:pointer" onclick="abrirCalendario(event)">
+          <input type="date" class="form-input dark" id="turno-fecha"
+                 style="pointer-events:none;cursor:pointer"
+                 onchange="onFechaChange()">
+          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:#c8a96e;font-size:13px">▼</span>
+        </div>
       </div>
       <div class="form-group">
         <div class="form-label">Turno</div>
@@ -602,6 +607,21 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// Normaliza cualquier formato de fecha a YYYY-MM-DD
+// Maneja: "Sat May 02 2026 GMT-0600", "2026-05-02T06:00:00Z", "2026-05-02"
+function normalizarFecha(fecha) {
+  if (!fecha) return '';
+  const s = String(fecha);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+  } catch(e) {}
+  return s;
+}
+
 function getDia(fechaStr) {
   const d = new Date(fechaStr + 'T12:00:00');
   return DIAS_ES[d.getDay()];
@@ -714,6 +734,32 @@ async function init() {
   updateTurnoMeta();
 
   await syncAll();
+
+  // Iniciar desde el último turno registrado (en background)
+  apiFetch({ action:'getTurnosPropinas' }).then(res => {
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const todos = res.data.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+      TURNOS_CACHE = todos;
+      localStorage.setItem('prop_turnos', JSON.stringify(todos));
+      const lastFecha = todos[0]?.fecha; // ya ordenados desc por backend
+      if (lastFecha) {
+        document.getElementById('turno-fecha').value = lastFecha;
+        DRAFT.fecha = lastFecha;
+        updateTurnoMeta();
+      }
+    }
+  }).catch(() => {
+    // Usar caché local si existe
+    if (TURNOS_CACHE.length > 0) {
+      const lastFecha = normalizarFecha(TURNOS_CACHE[0].fecha);
+      if (lastFecha) {
+        document.getElementById('turno-fecha').value = lastFecha;
+        DRAFT.fecha = lastFecha;
+        updateTurnoMeta();
+      }
+    }
+  });
+
   renderTurno();
   renderAdmin();
 }
@@ -994,9 +1040,27 @@ function calcTurno() {
 }
 
 // ── Meta header ───────────────────────────────────────────────
+function abrirCalendario(e) {
+  e.preventDefault();
+  const inp = document.getElementById('turno-fecha');
+  if (inp.showPicker) { try { inp.showPicker(); } catch(_) { inp.focus(); } }
+  else { inp.focus(); inp.click(); }
+}
+
 function onFechaChange() {
-  DRAFT.fecha = document.getElementById('turno-fecha').value;
-  updateTurnoMeta();
+  const inp  = document.getElementById('turno-fecha');
+  const val  = inp.value;
+  if (!val) return;
+  const fecha = new Date(val + 'T12:00:00');
+  const label = fecha.toLocaleDateString('es-CR', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  const confirmar = confirm(`¿Confirmar fecha?\n\n${label.charAt(0).toUpperCase() + label.slice(1)}`);
+  if (confirmar) {
+    DRAFT.fecha = val;
+    updateTurnoMeta();
+    renderTurno();
+  } else {
+    inp.value = DRAFT.fecha; // revertir
+  }
 }
 
 function updateTurnoMeta() {
@@ -1088,18 +1152,16 @@ async function loadHistorial() {
     const res = await apiFetch({ action:'getTurnosPropinas' });
     if (!res.ok) throw new Error(res.error || JSON.stringify(res));
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
-    const todos  = res.data || [];
+    const todos  = (res.data || []).map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
     TURNOS_CACHE = todos;
     localStorage.setItem('prop_turnos', JSON.stringify(todos));
-    const turnos = todos.filter(t => String(t.fecha || '').startsWith(prefix));
-    // DEBUG: mostrar qué trajo el backend
-    toast(`Backend: ${todos.length} total, ${turnos.length} en ${prefix}. Fecha[0]: ${todos[0]?.fecha ?? 'N/A'}`, turnos.length ? 'success' : 'error');
+    const turnos = todos.filter(t => t.fecha.startsWith(prefix));
     renderHistorial(turnos);
   } catch(e) {
-    toast('Error API: ' + e.message, 'error');
+    toast('Error al cargar historial', 'error');
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
-    const turnos = TURNOS_CACHE.filter(t => String(t.fecha || '').startsWith(prefix));
-    renderHistorial(turnos.length ? turnos : TURNOS_CACHE);
+    const todos  = TURNOS_CACHE.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+    renderHistorial(todos.filter(t => t.fecha.startsWith(prefix)));
   }
 }
 
@@ -1215,16 +1277,16 @@ async function loadResumen() {
     const res = await apiFetch({ action:'getTurnosPropinas' });
     if (!res.ok) throw new Error(res.error);
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
-    const todos  = res.data || [];
+    const todos  = (res.data || []).map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
     TURNOS_CACHE = todos;
     localStorage.setItem('prop_turnos', JSON.stringify(todos));
-    const turnos = todos.filter(t => String(t.fecha || '').startsWith(prefix));
+    const turnos = todos.filter(t => t.fecha.startsWith(prefix));
     renderResumen(turnos, mes, anio);
   } catch(e) {
+    toast('Error al cargar resumen', 'error');
     const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
-    const turnos = TURNOS_CACHE.filter(t => String(t.fecha || '').startsWith(prefix));
-    renderResumen(turnos.length ? turnos : TURNOS_CACHE, mes, anio);
-    toast('Usando caché local', 'error');
+    const todos  = TURNOS_CACHE.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+    renderResumen(todos.filter(t => t.fecha.startsWith(prefix)), mes, anio);
   }
 }
 
@@ -1233,7 +1295,7 @@ function renderResumen(turnos, mes, anio) {
   const byEmp = {};
 
   turnos.forEach(t => {
-    const day = parseInt((t.fecha || '').split('-')[2] || '0');
+    const day = parseInt((normalizarFecha(t.fecha) || '').split('-')[2] || '0');
     const isQ1 = day >= 1 && day <= 15;
     (t.datos?.lineas || []).forEach(l => {
       if (!l.nombre || !l.take_home) return;
