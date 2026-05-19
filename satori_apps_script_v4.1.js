@@ -1034,17 +1034,22 @@ function getTurnosPropinas(params) {
     return { ok: true, data: [] };
   }
   if (ws.getLastRow() < 2) return { ok: true, data: [] };
+  const tz = Session.getScriptTimeZone();
   const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 6).getValues();
   let data = rows.filter(r => r[0]).map(r => {
+    // Sheets auto-convierte fechas a Date objects — normalizar a YYYY-MM-DD
+    const fechaStr = r[1] instanceof Date
+      ? Utilities.formatDate(r[1], tz, 'yyyy-MM-dd')
+      : String(r[1]);
     let datos = {};
     try { datos = JSON.parse(r[4] || '{}'); } catch(e) {}
-    return { id: String(r[0]), fecha: r[1], dia_semana: r[2], num_semana: r[3], datos, created_at: r[5] };
+    return { id: String(r[0]), fecha: fechaStr, dia_semana: r[2], num_semana: r[3], datos, created_at: r[5] };
   });
   if (params.mes && params.anio) {
     const prefix = `${params.anio}-${String(params.mes).padStart(2, '0')}`;
-    data = data.filter(r => String(r.fecha).startsWith(prefix));
+    data = data.filter(r => r.fecha.startsWith(prefix));
   }
-  data.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  data.sort((a, b) => b.fecha.localeCompare(a.fecha));
   return { ok: true, data };
 }
 
