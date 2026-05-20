@@ -177,6 +177,22 @@ header {
   font-size:10px; font-weight:700; color:#888; pointer-events:none;
 }
 
+/* ── COCINA POOL ROW ── */
+.cocina-pool-row {
+  display:flex; align-items:center; gap:14px;
+  background:#1a0e08; border:1px solid #c23b2240; border-radius:2px;
+  padding:10px 14px; margin-bottom:8px;
+}
+.cocina-pool-row .emp-field-label { margin-bottom:0; white-space:nowrap; }
+.cocina-equal-badge {
+  font-size:9px; color:#c8a96e; background:#c8a96e18;
+  padding:4px 8px; border-radius:2px; white-space:nowrap; margin-left:auto;
+}
+.emp-hrs-fixed {
+  background:var(--teal-dim); color:var(--teal); font-size:10px; font-weight:700;
+  padding:6px 10px; border-radius:2px; text-align:center; min-width:56px;
+}
+
 /* ── ASIGNAR ROL SECTION ── */
 .asignar-section {
   background:#fff8ec; border:2px solid var(--gold); border-radius:2px;
@@ -681,7 +697,7 @@ let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
 let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
 
 // Draft del turno en curso
-let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[] };
+let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], cocina_pool:'' };
 let _cobPickerRol = null;
 
 // Turno seleccionado en modal detail
@@ -971,7 +987,50 @@ function renderTurno() {
         <div class="sl">${ROL_NAMES[rol]} <span class="sl-pts">${pts} pts/hora</span></div>
         <div class="emp-rows">`;
 
-    // Filas regulares
+    // Filas regulares — cocina con lógica especial
+    if (rol === 'cocina') {
+      const cocoPool      = parseFloat(DRAFT.cocina_pool) || 0;
+      const workedCocina  = emps.filter(e => (DRAFT.lineas.find(l => l.id === e.id) || {}).activo);
+      const cocoShare     = workedCocina.length > 0 && cocoPool ? cocoPool / workedCocina.length : 0;
+      html += `
+        <div class="cocina-pool-row">
+          <span class="emp-field-label">Pool Cocina</span>
+          <div class="emp-tips-wrap" style="flex:1;max-width:200px">
+            <span class="emp-tips-prefix">₡</span>
+            <input type="number" class="emp-input-tips" id="cocina-pool-input"
+              value="${DRAFT.cocina_pool}" placeholder="0" step="100" min="0"
+              oninput="onCocinaPoolChange()">
+          </div>
+          ${workedCocina.length > 0
+            ? `<span class="cocina-equal-badge">${fmtCRC(cocoShare)} c/u · ${workedCocina.length} activos</span>`
+            : `<span class="cocina-equal-badge" style="opacity:.4">Reparto igual</span>`}
+        </div>`;
+      emps.forEach(emp => {
+        const l   = DRAFT.lineas.find(x => x.id === emp.id) || {};
+        const chk = l.activo ? 'checked' : '';
+        html += `
+          <div class="emp-row${l.activo ? ' worked' : ''}" id="erow-${emp.id}">
+            <label class="emp-label-col" for="echk-${emp.id}">
+              <input type="checkbox" class="emp-chk" id="echk-${emp.id}"
+                ${chk} onchange="toggleEmp('${emp.id}')">
+              <span class="emp-nombre">${emp.nombre}</span>
+            </label>
+            <div class="emp-fields-col${l.activo ? '' : ' emp-inactive'}" style="grid-template-columns:80px 1fr 120px">
+              <div>
+                <div class="emp-field-label">Horas</div>
+                <div class="emp-hrs-fixed">8h</div>
+              </div>
+              <div></div>
+              <div>
+                <div class="emp-field-label">Take Home</div>
+                <div class="emp-take-badge${l.take_home ? '' : ' zero'}" id="eth-${emp.id}">
+                  ${l.take_home ? fmtCRC(l.take_home) : '₡ —'}
+                </div>
+              </div>
+            </div>
+          </div>`;
+      });
+    } else {
     emps.forEach(emp => {
       const l   = DRAFT.lineas.find(x => x.id === emp.id) || {};
       const chk = l.activo ? 'checked' : '';
@@ -1010,7 +1069,8 @@ function renderTurno() {
             </div>
           </div>
         </div>`;
-    });
+    }); // end else emps.forEach
+    } // end if/else cocina
 
     // Filas de cobertura
     cobsForRol.forEach(c => {
@@ -1157,6 +1217,11 @@ function onTipsChange(id) {
   calcTurno();
 }
 
+function onCocinaPoolChange() {
+  DRAFT.cocina_pool = parseFloat(document.getElementById('cocina-pool-input')?.value) || '';
+  calcTurno();
+}
+
 // ── Cobertura ─────────────────────────────────────────────────
 function openCobPicker(rol) {
   _cobPickerRol = _cobPickerRol === rol ? null : rol;
@@ -1212,25 +1277,41 @@ function calcTurno() {
   const worked    = DRAFT.lineas.filter(l => l.activo);
   const workedCob = DRAFT.coberturas.filter(c => c.activo);
 
-  // Pool = suma propinas generadas (regulares + coberturas)
-  const pool = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  // Separar cocina del resto (sistema de puntos diferente)
+  const workedSala   = worked.filter(l => l.rol !== 'cocina');
+  const workedCocina = worked.filter(l => l.rol === 'cocina');
 
-  // Puntos — cobertura usa pts del rol que cubre
-  worked.forEach(l => {
+  // ── Pool sala: suma propinas generadas (no-cocina + coberturas) ──
+  const poolSala = [...workedSala, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+
+  // Puntos sala
+  workedSala.forEach(l => {
     l.pts_val = (parseFloat(l.horas) || 0) * getRolPts(l.rol);
   });
   workedCob.forEach(c => {
     c.pts_val = (parseFloat(c.horas) || 0) * getRolPts(c.rol_cobertura);
   });
 
-  const totalPts = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
-  const rate     = totalPts > 0 ? pool / totalPts : 0;
+  const totalPtsSala = [...workedSala, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
+  const rateSala     = totalPtsSala > 0 ? poolSala / totalPtsSala : 0;
 
-  worked.forEach(l    => { l.take_home = l.pts_val * rate; });
-  workedCob.forEach(c => { c.take_home = c.pts_val * rate; });
+  workedSala.forEach(l    => { l.take_home = l.pts_val * rateSala; });
+  workedCob.forEach(c     => { c.take_home = c.pts_val * rateSala; });
 
-  // DOM — regulares
-  worked.forEach(l => {
+  // ── Cocina: 8h fijas, reparto igual del pool cocina ──
+  const cocoPool  = parseFloat(DRAFT.cocina_pool) || 0;
+  const cocoShare = workedCocina.length > 0 ? cocoPool / workedCocina.length : 0;
+  workedCocina.forEach(l => {
+    l.pts_val   = 8 * getRolPts('cocina');
+    l.take_home = cocoShare;
+  });
+  // Zeros para cocina inactiva
+  DRAFT.lineas.filter(l => l.rol === 'cocina' && !l.activo).forEach(l => {
+    l.pts_val = 0; l.take_home = 0;
+  });
+
+  // DOM — sala regulares
+  workedSala.forEach(l => {
     const pvEl = document.getElementById('epv-' + l.id);
     const thEl = document.getElementById('eth-' + l.id);
     if (pvEl) pvEl.textContent = l.pts_val > 0 ? fmtNum(l.pts_val) : '—';
@@ -1243,11 +1324,31 @@ function calcTurno() {
     if (pvEl) pvEl.textContent = c.pts_val > 0 ? fmtNum(c.pts_val) : '—';
     if (thEl) { thEl.textContent = c.take_home > 0 ? fmtCRC(c.take_home) : '₡ —'; thEl.classList.toggle('zero', !c.take_home); }
   });
+  // DOM — cocina (solo take home; no pts ni pool individual)
+  workedCocina.forEach(l => {
+    const thEl = document.getElementById('eth-' + l.id);
+    if (thEl) { thEl.textContent = l.take_home > 0 ? fmtCRC(l.take_home) : '₡ —'; thEl.classList.toggle('zero', !l.take_home); }
+  });
+  // Actualizar badge cocina pool row (sin re-renderizar)
+  const cocinaEqBadge = document.querySelector('.cocina-pool-row .cocina-equal-badge');
+  if (cocinaEqBadge) {
+    if (workedCocina.length > 0) {
+      cocinaEqBadge.textContent = `${fmtCRC(cocoShare)} c/u · ${workedCocina.length} activos`;
+      cocinaEqBadge.style.opacity = '1';
+    } else {
+      cocinaEqBadge.textContent = 'Reparto igual';
+      cocinaEqBadge.style.opacity = '.4';
+    }
+  }
 
+  const totalPtsCocina = workedCocina.reduce((s, l) => s + l.pts_val, 0);
+  const totalPts = totalPtsSala + totalPtsCocina;
+  const poolTotal = poolSala + cocoPool;
   const dist = [...worked, ...workedCob].reduce((s, l) => s + l.take_home, 0);
-  document.getElementById('pool-total').textContent = fmtCRC(pool);
+
+  document.getElementById('pool-total').textContent = fmtCRC(poolTotal);
   document.getElementById('pool-pts').textContent   = totalPts > 0 ? fmtNum(totalPts) : '0';
-  document.getElementById('pool-rate').textContent  = rate > 0 ? fmtCRC(rate) : '₡ —';
+  document.getElementById('pool-rate').textContent  = rateSala > 0 ? fmtCRC(rateSala) : '₡ —';
   document.getElementById('pool-dist').textContent  = fmtCRC(dist);
 }
 
@@ -1294,22 +1395,33 @@ async function saveTurno() {
 
   calcTurno();
 
-  const allWorked = [...worked, ...workedCob];
-  const pool     = allWorked.reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
-  const totalPts = allWorked.reduce((s, l) => s + l.pts_val, 0);
-  const rate     = totalPts > 0 ? pool / totalPts : 0;
+  const workedSala   = worked.filter(l => l.rol !== 'cocina');
+  const workedCocina = worked.filter(l => l.rol === 'cocina');
+  const cocoPool     = parseFloat(DRAFT.cocina_pool) || 0;
+  const poolSala     = [...workedSala, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const totalPts     = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
+  const rateSala     = workedSala.reduce((s,l) => s + l.pts_val, 0) + workedCob.reduce((s,c) => s + c.pts_val, 0);
 
   const datos = {
     turno: document.getElementById('turno-tipo').value,
-    pool_total: pool,
+    pool_total: poolSala + cocoPool,
+    pool_sala: poolSala,
+    pool_cocina: cocoPool,
     total_pts_val: totalPts,
-    point_rate: rate,
+    point_rate: rateSala > 0 ? poolSala / rateSala : 0,
     lineas: [
-      ...worked.map(l => ({
+      ...workedSala.map(l => ({
         id: l.id, nombre: l.nombre, rol: l.rol,
         horas: parseFloat(l.horas) || 0,
         propina_gen: parseFloat(l.propina_gen) || 0,
         pts_rol: getRolPts(l.rol), pts_val: l.pts_val, take_home: l.take_home
+      })),
+      ...workedCocina.map(l => ({
+        id: l.id, nombre: l.nombre, rol: l.rol,
+        horas: 8,
+        propina_gen: l.take_home,    // Su parte del pool cocina
+        pts_rol: getRolPts('cocina'), pts_val: l.pts_val, take_home: l.take_home,
+        cocina_pool_share: true
       })),
       ...workedCob.map(c => ({
         id: c.empId, nombre: c.nombre, rol: c.rol_cobertura,
@@ -1360,6 +1472,7 @@ function resetTurno() {
     l.activo = false; l.horas = ''; l.propina_gen = ''; l.pts_val = 0; l.take_home = 0;
   });
   DRAFT.coberturas = [];
+  DRAFT.cocina_pool = '';
   _cobPickerRol = null;
   renderTurno();
 }
