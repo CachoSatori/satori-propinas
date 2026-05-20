@@ -121,6 +121,12 @@ header {
   white-space:nowrap;
 }
 .turno-meta strong { color:var(--gold); }
+.edit-banner {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:#c8a96e14; border:1px solid #c8a96e50; border-radius:2px;
+  padding:10px 14px; margin-bottom:12px;
+}
+.edit-banner-label { font-size:11px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
 
 /* ── EMPLOYEE ROW ── */
 .emp-section { margin-bottom:8px; }
@@ -490,13 +496,15 @@ header {
       </div>
       <div class="form-group">
         <div class="form-label">Turno</div>
-        <select class="form-select dark" id="turno-tipo">
+        <select class="form-select dark" id="turno-tipo" onchange="onTurnoTipoChange()">
           <option value="PM">PM — Noche</option>
           <option value="AM">AM — Mediodía</option>
         </select>
       </div>
       <div class="turno-meta" id="turno-meta">—</div>
     </div>
+
+    <div id="turno-edit-banner" style="display:none"></div>
 
     <div id="turno-sections"></div>
 
@@ -684,6 +692,7 @@ header {
     <div id="modal-det-body"></div>
     <div class="modal-actions">
       <button class="btn btn-red btn-sm" id="modal-det-del" onclick="deleteTurnoFromModal()">Eliminar</button>
+      <button class="btn btn-teal btn-sm" onclick="editTurno(TURNO_DETAIL_ID)">✏ Editar</button>
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-turno-det')">Cerrar</button>
     </div>
   </div>
@@ -706,7 +715,7 @@ let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
 let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
 
 // Draft del turno en curso
-let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[] };
+let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], editingId: null };
 let _cobPickerRol = null;
 
 // Turno seleccionado en modal detail
@@ -851,23 +860,28 @@ async function init() {
   updateTurnoMeta();
 
   await syncAll();
+  tryRestoreDraft();
 
   // Iniciar desde el último turno registrado (en background)
+  // Solo actualizar fecha si no hay borrador activo restaurado
   apiFetch({ action:'getTurnosPropinas' }).then(res => {
     if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
       const todos = res.data.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
       TURNOS_CACHE = todos;
       localStorage.setItem('prop_turnos', JSON.stringify(todos));
-      const lastFecha = todos[0]?.fecha; // ya ordenados desc por backend
-      if (lastFecha) {
-        document.getElementById('turno-fecha').value = lastFecha;
-        DRAFT.fecha = lastFecha;
-        updateTurnoMeta();
+      const hasDraft = DRAFT.lineas.some(l => l.activo) || DRAFT.editingId;
+      if (!hasDraft) {
+        const lastFecha = todos[0]?.fecha;
+        if (lastFecha) {
+          document.getElementById('turno-fecha').value = lastFecha;
+          DRAFT.fecha = lastFecha;
+          updateTurnoMeta();
+        }
       }
     }
   }).catch(() => {
-    // Usar caché local si existe
-    if (TURNOS_CACHE.length > 0) {
+    const hasDraft = DRAFT.lineas.some(l => l.activo) || DRAFT.editingId;
+    if (!hasDraft && TURNOS_CACHE.length > 0) {
       const lastFecha = normalizarFecha(TURNOS_CACHE[0].fecha);
       if (lastFecha) {
         document.getElementById('turno-fecha').value = lastFecha;
@@ -958,6 +972,23 @@ function renderTurno() {
   const activos = EMPLEADOS
     .filter(e => e.activo !== false && e.activo !== 'false')
     .map(e => ({ ...e, rol: normalizarRol(e.rol) || e.rol }));
+
+  // Edit banner + save button label
+  const editBanner = document.getElementById('turno-edit-banner');
+  const saveBtn    = document.querySelector('.turno-actions .btn-teal');
+  if (DRAFT.editingId) {
+    const tipo = document.getElementById('turno-tipo')?.value || 'PM';
+    editBanner.className = 'edit-banner';
+    editBanner.style.display = '';
+    editBanner.innerHTML = `
+      <span class="edit-banner-label">✏ EDITANDO · ${DRAFT.fecha} · ${tipo}</span>
+      <button class="btn btn-ghost btn-sm" onclick="resetTurno()">Cancelar edición</button>`;
+    if (saveBtn) saveBtn.textContent = '✏ Actualizar Turno';
+  } else {
+    editBanner.style.display = 'none';
+    editBanner.innerHTML = '';
+    if (saveBtn) saveBtn.textContent = '▶ Guardar Turno';
+  }
 
   const container = document.getElementById('turno-sections');
 
@@ -1275,6 +1306,100 @@ function onTipsCob(vId) {
   calcTurno();
 }
 
+// ── Auto-guardar borrador ──────────────────────────────────────
+function saveDraft() {
+  const hasWork = DRAFT.lineas.some(l => l.activo) || DRAFT.coberturas.some(c => c.activo) || DRAFT.editingId;
+  if (!hasWork) { localStorage.removeItem('prop_draft'); return; }
+  localStorage.setItem('prop_draft', JSON.stringify({
+    fecha: DRAFT.fecha,
+    turno: document.getElementById('turno-tipo')?.value || DRAFT.turno,
+    editingId: DRAFT.editingId,
+    lineas: DRAFT.lineas.map(l => ({ id: l.id, activo: l.activo, horas: l.horas, propina_gen: l.propina_gen })),
+    coberturas: DRAFT.coberturas
+  }));
+}
+
+function tryRestoreDraft() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem('prop_draft') || 'null'); } catch(e) { return; }
+  if (!d || !d.fecha) return;
+
+  // Restaurar meta
+  DRAFT.fecha = d.fecha;
+  DRAFT.editingId = d.editingId || null;
+  const tipoEl = document.getElementById('turno-tipo');
+  if (tipoEl && d.turno) tipoEl.value = d.turno;
+  document.getElementById('turno-fecha').value = d.fecha;
+  updateTurnoMeta();
+
+  // Restaurar lineas activas
+  (d.lineas || []).forEach(saved => {
+    if (!saved.activo) return;
+    const l = DRAFT.lineas.find(x => x.id === saved.id);
+    if (l) { l.activo = true; l.horas = saved.horas; l.propina_gen = saved.propina_gen; }
+  });
+
+  // Restaurar coberturas (solo si los empleados aún existen)
+  DRAFT.coberturas = (d.coberturas || []).filter(c => EMPLEADOS.find(e => e.id === c.empId));
+
+  calcTurno();
+  renderTurno();
+  const tipo = d.turno || 'PM';
+  toast(`Borrador restaurado · ${d.fecha} · ${tipo}${d.editingId ? ' · ✏ editando' : ''}`, 'info');
+}
+
+function onTurnoTipoChange() {
+  DRAFT.turno = document.getElementById('turno-tipo').value;
+  saveDraft();
+}
+
+// ── Editar turno existente ────────────────────────────────────
+function editTurno(id) {
+  const t = TURNOS_CACHE.find(x => x.id === id);
+  if (!t) { toast('Turno no encontrado en caché', 'error'); return; }
+  const d = t.datos || {};
+
+  // Resetear estado
+  DRAFT.lineas.forEach(l => { l.activo = false; l.horas = ''; l.propina_gen = ''; l.pts_val = 0; l.take_home = 0; });
+  DRAFT.coberturas = [];
+
+  // Cargar meta
+  DRAFT.fecha      = t.fecha;
+  DRAFT.editingId  = id;
+  const tipoEl = document.getElementById('turno-tipo');
+  if (tipoEl) tipoEl.value = d.turno || 'PM';
+  document.getElementById('turno-fecha').value = t.fecha;
+  updateTurnoMeta();
+
+  // Restaurar empleados primarios
+  (d.lineas || []).filter(l => !l.cobertura).forEach(saved => {
+    const l = DRAFT.lineas.find(x => x.id === saved.id);
+    if (l) { l.activo = true; l.horas = saved.horas ?? ''; l.propina_gen = saved.propina_gen ?? ''; }
+  });
+
+  // Restaurar coberturas
+  (d.lineas || []).filter(l => l.cobertura).forEach(c => {
+    const emp = EMPLEADOS.find(e => e.id === c.id);
+    if (!emp) return;
+    const vId = c.id + '__' + c.rol;
+    if (!DRAFT.coberturas.find(x => x.vId === vId)) {
+      DRAFT.coberturas.push({
+        vId, empId: c.id, nombre: c.nombre,
+        rol_original: c.rol_original || emp.rol,
+        rol_cobertura: c.rol, activo: true,
+        horas: c.horas ?? '', propina_gen: c.propina_gen ?? '',
+        pts_val: c.pts_val || 0, take_home: c.take_home || 0
+      });
+    }
+  });
+
+  closeModal('modal-turno-det');
+  showView('turno');
+  calcTurno();
+  renderTurno();
+  toast('Turno cargado para editar', 'info');
+}
+
 // ── Cálculo principal ─────────────────────────────────────────
 function calcTurno() {
   const worked    = DRAFT.lineas.filter(l => l.activo);
@@ -1318,6 +1443,8 @@ function calcTurno() {
   document.getElementById('pool-pts').textContent   = totalPts > 0 ? fmtNum(totalPts) : '0';
   document.getElementById('pool-rate').textContent  = rate > 0 ? fmtCRC(rate) : '₡ —';
   document.getElementById('pool-dist').textContent  = fmtCRC(dist);
+
+  saveDraft();
 }
 
 // ── Meta header ───────────────────────────────────────────────
@@ -1338,6 +1465,7 @@ function onFechaChange() {
   if (confirmar) {
     DRAFT.fecha = val;
     updateTurnoMeta();
+    saveDraft();
     renderTurno();
   } else {
     inp.value = DRAFT.fecha; // revertir
@@ -1361,6 +1489,23 @@ async function saveTurno() {
   const workedCob = DRAFT.coberturas.filter(c => c.activo);
   if (!worked.length && !workedCob.length) { toast('Marcá quién trabajó primero', 'error'); return; }
 
+  // ── Protección contra duplicados ───────────────────────────
+  const turnoTipo = document.getElementById('turno-tipo').value;
+  const duplicate = TURNOS_CACHE.find(t =>
+    normalizarFecha(t.fecha) === DRAFT.fecha &&
+    (t.datos?.turno || 'PM') === turnoTipo &&
+    t.id !== DRAFT.editingId
+  );
+  if (duplicate) {
+    const ok = confirm(
+      `⚠ Ya existe un turno ${turnoTipo} del ${DRAFT.fecha}.\n\n` +
+      `¿Querés reemplazarlo con los datos actuales?`
+    );
+    if (!ok) return;
+    DRAFT.editingId = duplicate.id; // sobreescribir ese registro
+  }
+
+  const isEditing = !!DRAFT.editingId;
   calcTurno();
 
   const pool     = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
@@ -1368,7 +1513,7 @@ async function saveTurno() {
   const rate     = totalPts > 0 ? pool / totalPts : 0;
 
   const datos = {
-    turno: document.getElementById('turno-tipo').value,
+    turno: turnoTipo,
     pool_total: pool,
     pool_sala: pool,
     pool_cocina: 0,
@@ -1391,7 +1536,7 @@ async function saveTurno() {
     ]
   };
 
-  const turnoId = genId();
+  const turnoId = DRAFT.editingId || genId();
   const payload = {
     id: turnoId,
     fecha: DRAFT.fecha,
@@ -1402,9 +1547,11 @@ async function saveTurno() {
 
   // ── 1. Guardar localmente de inmediato ──────────────────────
   const localEntry = { ...payload, created_at: new Date().toISOString() };
+  TURNOS_CACHE = TURNOS_CACHE.filter(t => t.id !== turnoId); // quitar viejo si existe
   TURNOS_CACHE.unshift(localEntry);
   localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
-  toast('Turno guardado', 'success');
+  localStorage.removeItem('prop_draft');
+  toast(isEditing ? 'Turno actualizado' : 'Turno guardado', 'success');
   resetTurno();
 
   // ── 2. Intentar sync con backend en background ──────────────
@@ -1430,7 +1577,9 @@ function resetTurno() {
     l.activo = false; l.horas = ''; l.propina_gen = ''; l.pts_val = 0; l.take_home = 0;
   });
   DRAFT.coberturas = [];
-  _cobPickerRol = null;
+  DRAFT.editingId  = null;
+  _cobPickerRol    = null;
+  localStorage.removeItem('prop_draft');
   renderTurno();
 }
 
