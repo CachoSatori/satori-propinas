@@ -269,6 +269,20 @@ header {
   font-size:8px; color:#444; letter-spacing:.05em; text-transform:uppercase; flex:1; text-align:right;
 }
 
+/* ── BARRA POOL ROW ── */
+.barra-pool-row {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  background:#0d101a; border:1px solid #2a3a6e40; border-radius:2px;
+  padding:12px 16px; margin-bottom:12px;
+}
+.barra-pool-label {
+  font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:#7e8ec8; white-space:nowrap;
+}
+.barra-pool-hint {
+  font-size:8px; color:#444; letter-spacing:.05em; text-transform:uppercase; flex:1; text-align:right;
+}
+
 /* ── PENDING BANNER ── */
 .pending-banner {
   display:flex; align-items:center; gap:10px;
@@ -791,7 +805,7 @@ let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
 let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
 
 // Draft del turno en curso
-let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], editingId: null, efectivo: '' };
+let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], editingId: null, efectivo: '', barra_pool: '' };
 let _cobPickerRol = null;
 
 // Turno seleccionado en modal detail
@@ -1019,6 +1033,7 @@ function showView(name) {
 // TURNO — RENDER
 // ═══════════════════════════════════════════════════════════════
 const ROL_ORDER = ['salonero','barman','barback','runner','cocina','cajero','manager'];
+const BAR_ROLES = ['barman', 'barback'];
 const ROL_NAMES = {
   salonero:'Saloneros', barman:'Barman', barback:'Barback',
   runner:'Runners', cocina:'Cocina', cajero:'Cajeros', manager:'Manager'
@@ -1085,10 +1100,13 @@ function renderTurno() {
       </div>`;
   }
 
+  let barraPoolInputRendered = false;
+
   ROL_ORDER.forEach(rol => {
     const emps       = activos.filter(e => e.rol === rol);
     const cobsForRol = DRAFT.coberturas.filter(c => c.rol_cobertura === rol);
     const pts        = getRolPts(rol);
+    const isBar      = BAR_ROLES.includes(rol);
     // Show section if has primary employees, coberturas, or picker open
     if (!emps.length && !cobsForRol.length && _cobPickerRol !== rol) return;
 
@@ -1097,11 +1115,27 @@ function renderTurno() {
         <div class="sl">${ROL_NAMES[rol]} <span class="sl-pts">${pts} pts/hora</span></div>
         <div class="emp-rows">`;
 
-    // Filas de empleados (cocina con 3 columnas, resto con 4)
+    // Pool Barra input — shown once in the first bar section that renders
+    if (isBar && !barraPoolInputRendered) {
+      barraPoolInputRendered = true;
+      const bpVal = DRAFT.barra_pool || '';
+      html += `
+        <div class="barra-pool-row">
+          <span class="barra-pool-label">🍸 Pool Barra</span>
+          <div class="emp-tips-wrap" style="max-width:180px">
+            <span class="emp-tips-prefix">₡</span>
+            <input type="number" class="emp-input-tips" id="barra-pool-input"
+              value="${bpVal}" placeholder="0" step="100" min="0" oninput="onBarraPoolChange()">
+          </div>
+          <span class="barra-pool-hint">Propina barra — dividida por horas trabajadas</span>
+        </div>`;
+    }
+
+    // Filas de empleados (cocina y bar con 3 columnas, resto con 4)
     emps.forEach(emp => {
       const l        = DRAFT.lineas.find(x => x.id === emp.id) || {};
       const chk      = l.activo ? 'checked' : '';
-      const isCocina = rol === 'cocina';
+      const use3col  = rol === 'cocina' || isBar;
       html += `
         <div class="emp-row${l.activo ? ' worked' : ''}" id="erow-${emp.id}">
           <label class="emp-label-col" for="echk-${emp.id}">
@@ -1109,13 +1143,13 @@ function renderTurno() {
               ${chk} onchange="toggleEmp('${emp.id}')">
             <span class="emp-nombre">${emp.nombre}</span>
           </label>
-          ${isCocina ? `
+          ${use3col ? `
           <div class="emp-fields-col${l.activo ? '' : ' emp-inactive'}" style="grid-template-columns:80px 1fr 120px">
             <div>
               <div class="emp-field-label">Horas</div>
               <input type="number" class="emp-input-sm" id="ehrs-${emp.id}"
                 value="${l.horas !== '' && l.horas !== undefined ? l.horas : (l.activo ? 8 : '')}"
-                placeholder="8" step="0.25" min="0" max="24"
+                placeholder="${rol === 'cocina' ? '8' : '0.0'}" step="0.25" min="0" max="24"
                 oninput="onHrsChange('${emp.id}')">
             </div>
             <div>
@@ -1161,7 +1195,8 @@ function renderTurno() {
 
     // Filas de cobertura
     cobsForRol.forEach(c => {
-      const chk = c.activo ? 'checked' : '';
+      const chk      = c.activo ? 'checked' : '';
+      const cobIsBar = BAR_ROLES.includes(c.rol_cobertura);
       html += `
         <div class="emp-row cobertura${c.activo ? ' worked' : ''}" id="erow-cob-${c.vId}">
           <div class="emp-label-col" onclick="document.getElementById('echk-cob-${c.vId}').click()" style="cursor:pointer">
@@ -1170,6 +1205,25 @@ function renderTurno() {
             <span class="emp-nombre">${c.nombre}<span class="badge-cob">COB</span></span>
             <button class="btn-cob-remove" onclick="event.stopPropagation();removeCob('${c.vId}')" title="Quitar cobertura">×</button>
           </div>
+          ${cobIsBar ? `
+          <div class="emp-fields-col${c.activo ? '' : ' emp-inactive'}" style="grid-template-columns:80px 1fr 120px">
+            <div>
+              <div class="emp-field-label">Horas</div>
+              <input type="number" class="emp-input-sm" id="ehrs-cob-${c.vId}"
+                value="${c.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                oninput="onHrsCob('${c.vId}')">
+            </div>
+            <div>
+              <div class="emp-field-label">Puntos</div>
+              <div class="emp-pts-badge" id="epv-cob-${c.vId}">${c.pts_val ? fmtNum(c.pts_val) : '—'}</div>
+            </div>
+            <div>
+              <div class="emp-field-label">Take Home</div>
+              <div class="emp-take-badge${c.take_home ? '' : ' zero'}" id="eth-cob-${c.vId}">
+                ${c.take_home ? fmtCRC(c.take_home) : '₡ —'}
+              </div>
+            </div>
+          </div>` : `
           <div class="emp-fields-col${c.activo ? '' : ' emp-inactive'}">
             <div>
               <div class="emp-field-label">Horas</div>
@@ -1196,7 +1250,7 @@ function renderTurno() {
                 ${c.take_home ? fmtCRC(c.take_home) : '₡ —'}
               </div>
             </div>
-          </div>
+          </div>`}
         </div>`;
     });
 
@@ -1372,6 +1426,7 @@ function saveDraft() {
     turno: document.getElementById('turno-tipo')?.value || DRAFT.turno,
     editingId: DRAFT.editingId,
     efectivo: DRAFT.efectivo,
+    barra_pool: DRAFT.barra_pool,
     lineas: DRAFT.lineas.map(l => ({ id: l.id, activo: l.activo, horas: l.horas, propina_gen: l.propina_gen })),
     coberturas: DRAFT.coberturas
   }));
@@ -1383,9 +1438,10 @@ function tryRestoreDraft() {
   if (!d || !d.fecha) return;
 
   // Restaurar meta
-  DRAFT.fecha     = d.fecha;
-  DRAFT.editingId = d.editingId || null;
-  DRAFT.efectivo  = d.efectivo  || '';
+  DRAFT.fecha      = d.fecha;
+  DRAFT.editingId  = d.editingId  || null;
+  DRAFT.efectivo   = d.efectivo   || '';
+  DRAFT.barra_pool = d.barra_pool || '';
   const tipoEl = document.getElementById('turno-tipo');
   if (tipoEl && d.turno) tipoEl.value = d.turno;
   document.getElementById('turno-fecha').value = d.fecha;
@@ -1420,6 +1476,12 @@ function onEfectivoChange() {
   validatePool();
 }
 
+function onBarraPoolChange() {
+  DRAFT.barra_pool = document.getElementById('barra-pool-input')?.value || '';
+  calcTurno();
+  validatePool();
+}
+
 // ── Validación del pool ───────────────────────────────────────
 function validatePool() {
   const expected = parseFloat(document.getElementById('pool-expected')?.value) || 0;
@@ -1428,8 +1490,11 @@ function validatePool() {
   if (!expected) { badge.textContent = ''; return; }
   const worked    = DRAFT.lineas.filter(l => l.activo);
   const workedCob = DRAFT.coberturas.filter(c => c.activo);
-  const genSum = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
-  const actual = genSum + (parseFloat(DRAFT.efectivo) || 0);
+  const workedSala = worked.filter(l => !BAR_ROLES.includes(l.rol));
+  const cobSala    = workedCob.filter(c => !BAR_ROLES.includes(c.rol_cobertura));
+  const barraPool  = parseFloat(DRAFT.barra_pool) || 0;
+  const genSum = [...workedSala, ...cobSala].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const actual = genSum + (parseFloat(DRAFT.efectivo) || 0) + barraPool;
   const diff   = actual - expected;
   if (Math.abs(diff) < 100) {
     badge.textContent = '✅ OK';
@@ -1483,6 +1548,7 @@ function shareTurno(id) {
   });
 
   if (d.pool_efectivo) lines.push(`💵 Efectivo: ₡ ${n(d.pool_efectivo)}`);
+  if (d.pool_barra)    lines.push(`🍸 Pool barra: ₡ ${n(d.pool_barra)}`);
   lines.push(`Pool total:  ₡ ${n(d.pool_total)}`);
   lines.push(`₡ ${n(d.point_rate)} por punto`);
 
@@ -1520,6 +1586,7 @@ function editTurno(id) {
   DRAFT.fecha      = t.fecha;
   DRAFT.editingId  = id;
   DRAFT.efectivo   = d.pool_efectivo ? String(d.pool_efectivo) : '';
+  DRAFT.barra_pool = d.pool_barra   ? String(d.pool_barra)    : '';
   const tipoEl = document.getElementById('turno-tipo');
   if (tipoEl) tipoEl.value = d.turno || 'PM';
   document.getElementById('turno-fecha').value = t.fecha;
@@ -1561,11 +1628,20 @@ function calcTurno() {
   const worked    = DRAFT.lineas.filter(l => l.activo);
   const workedCob = DRAFT.coberturas.filter(c => c.activo);
 
-  // Pool total: propinas generadas + efectivo en cash
-  const efectivo = parseFloat(DRAFT.efectivo) || 0;
-  const pool = efectivo + [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  // Separar bar vs sala
+  const workedSala = worked.filter(l => !BAR_ROLES.includes(l.rol));
+  const workedBar  = worked.filter(l =>  BAR_ROLES.includes(l.rol));
+  const cobSala    = workedCob.filter(c => !BAR_ROLES.includes(c.rol_cobertura));
+  const cobBar     = workedCob.filter(c =>  BAR_ROLES.includes(c.rol_cobertura));
 
-  // Puntos de todos (horas × pts/hora según rol)
+  const efectivo  = parseFloat(DRAFT.efectivo)   || 0;
+  const barraPool = parseFloat(DRAFT.barra_pool) || 0;
+
+  // Pool general: efectivo + propinas de sala (bar no aporta propina_gen)
+  const generalPool = efectivo +
+    [...workedSala, ...cobSala].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+
+  // Puntos de todos (bar incluido, participan en pool general por puntos)
   worked.forEach(l => {
     l.pts_val = (parseFloat(l.horas) || 0) * getRolPts(l.rol);
   });
@@ -1573,13 +1649,24 @@ function calcTurno() {
     c.pts_val = (parseFloat(c.horas) || 0) * getRolPts(c.rol_cobertura);
   });
 
-  const totalPts = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
-  const rate     = totalPts > 0 ? pool / totalPts : 0;
+  const totalPts    = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
+  const generalRate = totalPts > 0 ? generalPool / totalPts : 0;
 
-  worked.forEach(l  => { l.take_home = l.pts_val * rate; });
-  workedCob.forEach(c => { c.take_home = c.pts_val * rate; });
+  // Take home base: todos por puntos × tasa general
+  worked.forEach(l  => { l.take_home = l.pts_val * generalRate; });
+  workedCob.forEach(c => { c.take_home = c.pts_val * generalRate; });
 
-  // DOM — todos los empleados regulares
+  // Pool barra: se distribuye entre bar workers (primarios + coberturas) por horas
+  const allBar         = [...workedBar, ...cobBar];
+  const totalBarHoras  = allBar.reduce((s, l) => s + (parseFloat(l.horas) || 0), 0);
+  if (barraPool > 0 && totalBarHoras > 0) {
+    allBar.forEach(l => {
+      const horas = parseFloat(l.horas) || 0;
+      l.take_home += (horas / totalBarHoras) * barraPool;
+    });
+  }
+
+  // DOM — empleados regulares
   worked.forEach(l => {
     const pvEl = document.getElementById('epv-' + l.id);
     const thEl = document.getElementById('eth-' + l.id);
@@ -1594,11 +1681,12 @@ function calcTurno() {
     if (thEl) { thEl.textContent = c.take_home > 0 ? fmtCRC(c.take_home) : '₡ —'; thEl.classList.toggle('zero', !c.take_home); }
   });
 
-  const dist = [...worked, ...workedCob].reduce((s, l) => s + l.take_home, 0);
+  const dist      = [...worked, ...workedCob].reduce((s, l) => s + l.take_home, 0);
+  const poolTotal = generalPool + barraPool;
 
-  document.getElementById('pool-total').textContent = fmtCRC(pool);
+  document.getElementById('pool-total').textContent = fmtCRC(poolTotal);
   document.getElementById('pool-pts').textContent   = totalPts > 0 ? fmtNum(totalPts) : '0';
-  document.getElementById('pool-rate').textContent  = rate > 0 ? fmtCRC(rate) : '₡ —';
+  document.getElementById('pool-rate').textContent  = generalRate > 0 ? fmtCRC(generalRate) : '₡ —';
   document.getElementById('pool-dist').textContent  = fmtCRC(dist);
 
   saveDraft();
@@ -1665,8 +1753,11 @@ async function saveTurno() {
   // Validación pool (si hay valor esperado ingresado)
   const expectedVal = parseFloat(document.getElementById('pool-expected')?.value) || 0;
   if (expectedVal) {
-    const genSum   = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
-    const actualPool = genSum + (parseFloat(DRAFT.efectivo) || 0);
+    const _bpV   = parseFloat(DRAFT.barra_pool) || 0;
+    const _salaW = worked.filter(l => !BAR_ROLES.includes(l.rol));
+    const _salaC = workedCob.filter(c => !BAR_ROLES.includes(c.rol_cobertura));
+    const genSum = [..._salaW, ..._salaC].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+    const actualPool = genSum + (parseFloat(DRAFT.efectivo) || 0) + _bpV;
     if (Math.abs(actualPool - expectedVal) >= 100) {
       const diff = actualPool - expectedVal;
       const ok = confirm(
@@ -1683,31 +1774,36 @@ async function saveTurno() {
   const isEditing = !!DRAFT.editingId;
   calcTurno();
 
-  const efectivo = parseFloat(DRAFT.efectivo) || 0;
-  const pool     = efectivo + [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
-  const totalPts = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
-  const rate     = totalPts > 0 ? pool / totalPts : 0;
+  const efectivo    = parseFloat(DRAFT.efectivo)   || 0;
+  const barraPool   = parseFloat(DRAFT.barra_pool) || 0;
+  const workedSala  = worked.filter(l => !BAR_ROLES.includes(l.rol));
+  const cobSala     = workedCob.filter(c => !BAR_ROLES.includes(c.rol_cobertura));
+  const generalPool = efectivo + [...workedSala, ...cobSala].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const poolTotal   = generalPool + barraPool;
+  const totalPts    = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
+  const generalRate = totalPts > 0 ? generalPool / totalPts : 0;
 
   const datos = {
     turno: turnoTipo,
-    pool_total: pool,
-    pool_sala: pool - efectivo,
+    pool_total: poolTotal,
+    pool_sala: [...workedSala, ...cobSala].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0),
     pool_cocina: 0,
     pool_efectivo: efectivo,
+    pool_barra: barraPool,
     total_pts_val: totalPts,
-    point_rate: rate,
+    point_rate: generalRate,
     lineas: [
       ...worked.map(l => ({
         id: l.id, nombre: l.nombre, rol: l.rol,
         horas: parseFloat(l.horas) || 0,
-        propina_gen: parseFloat(l.propina_gen) || 0,
+        propina_gen: BAR_ROLES.includes(l.rol) ? 0 : (parseFloat(l.propina_gen) || 0),
         pts_rol: getRolPts(l.rol), pts_val: l.pts_val, take_home: l.take_home
       })),
       ...workedCob.map(c => ({
         id: c.empId, nombre: c.nombre, rol: c.rol_cobertura,
         cobertura: true, rol_original: c.rol_original,
         horas: parseFloat(c.horas) || 0,
-        propina_gen: parseFloat(c.propina_gen) || 0,
+        propina_gen: BAR_ROLES.includes(c.rol_cobertura) ? 0 : (parseFloat(c.propina_gen) || 0),
         pts_rol: getRolPts(c.rol_cobertura), pts_val: c.pts_val, take_home: c.take_home
       }))
     ]
@@ -1757,10 +1853,13 @@ function resetTurno() {
   DRAFT.coberturas = [];
   DRAFT.editingId  = null;
   DRAFT.efectivo   = '';
+  DRAFT.barra_pool = '';
   _cobPickerRol    = null;
   localStorage.removeItem('prop_draft');
   const efEl = document.getElementById('efectivo-input');
   if (efEl) efEl.value = '';
+  const bpEl = document.getElementById('barra-pool-input');
+  if (bpEl) bpEl.value = '';
   const expEl = document.getElementById('pool-expected');
   if (expEl) expEl.value = '';
   const badge = document.getElementById('pool-verify-badge');
