@@ -634,6 +634,23 @@ header {
           </div>
         </div>
       </div>
+      <!-- Limpiar caché -->
+      <div>
+        <div class="sl">Sincronización</div>
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <span class="admin-card-title">Caché local</span>
+          </div>
+          <div style="padding:14px 16px;font-size:10px;color:var(--muted);line-height:1.6">
+            Si la lista de empleados aparece duplicada, limpiá la caché y sincronizá de nuevo. El sheet es la fuente de verdad.
+          </div>
+          <div style="padding:0 16px 16px">
+            <button class="btn btn-red btn-sm" onclick="clearCacheAndSync()" style="width:100%">
+              🗑 Limpiar caché y re-sincronizar
+            </button>
+          </div>
+        </div>
+      </div>
       <!-- Roles y puntos -->
       <div>
         <div class="sl">Puntos por Rol</div>
@@ -880,6 +897,16 @@ async function init() {
   renderAdmin();
 }
 
+async function clearCacheAndSync() {
+  if (!confirm('¿Limpiar caché local y re-sincronizar desde el sheet?')) return;
+  localStorage.removeItem('prop_empleados');
+  localStorage.removeItem('prop_roles');
+  EMPLEADOS = [];
+  ROLES_DATA = [];
+  toast('Caché limpiada — sincronizando...', 'info');
+  await syncAll();
+}
+
 async function syncAll() {
   setSyncStatus('loading', 'SYNC...');
   try {
@@ -888,12 +915,15 @@ async function syncAll() {
       apiFetch({ action:'getRolesPropinas' })
     ]);
     if (eRes.ok && eRes.data) {
-      // Merge: keep local-only employees not yet pushed to backend
+      // Merge: keep only truly local employees (created in-app, prefijo local_)
+      // Los empleados cacheados con otros IDs son datos viejos — el backend manda
       const backendIds = new Set(eRes.data.map(e => String(e.id)));
-      const localOnly  = EMPLEADOS.filter(e => !backendIds.has(String(e.id)));
+      const localOnly  = EMPLEADOS.filter(e =>
+        !backendIds.has(String(e.id)) && String(e.id).startsWith('local_')
+      );
       EMPLEADOS = [...eRes.data, ...localOnly];
       localStorage.setItem('prop_empleados', JSON.stringify(EMPLEADOS));
-      // Push local-only employees up to backend
+      // Push only truly local employees up to backend
       localOnly.forEach(emp => {
         apiPost({ action: 'saveEmpleado', data: emp }).catch(() => {});
       });
