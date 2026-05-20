@@ -960,10 +960,22 @@ function deleteEmpleado(id) {
 }
 
 function syncEmpleadosDashboard(nombres) {
-  // Auto-creación desactivada: la lista de empleados se gestiona
-  // únicamente desde el admin de Propinas para evitar duplicados.
-  // La función se mantiene para compatibilidad pero no escribe nada.
-  return { ok: true, added: [] };
+  if (!nombres || !Array.isArray(nombres)) return { ok: false, error: 'nombres must be array' };
+  const ws = _getEmpSheet();
+  const existing = new Set();
+  if (ws.getLastRow() >= 2) {
+    const rows = ws.getRange(2, 1, ws.getLastRow() - 1, 2).getValues();
+    rows.forEach(r => { if (r[1]) existing.add(String(r[1]).toUpperCase().trim()); });
+  }
+  const added = [];
+  nombres.forEach(nombre => {
+    const norm = String(nombre).toUpperCase().trim();
+    if (!norm || existing.has(norm)) return;
+    ws.appendRow([Utilities.getUuid(), norm, 'sin_asignar', true]);
+    existing.add(norm);
+    added.push(norm);
+  });
+  return { ok: true, added };
 }
 
 // ══════════════════════════════════════════════════════════════
