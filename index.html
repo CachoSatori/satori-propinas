@@ -255,6 +255,55 @@ header {
 }
 .btn-cob-remove:hover { opacity:1; color:var(--red); }
 
+/* ── EFECTIVO ROW ── */
+.efectivo-row {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  background:#0d1a14; border:1px solid #2a6e4440; border-radius:2px;
+  padding:12px 16px; margin-bottom:12px;
+}
+.efectivo-label {
+  font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:#7ec8b8; white-space:nowrap;
+}
+.efectivo-hint {
+  font-size:8px; color:#444; letter-spacing:.05em; text-transform:uppercase; flex:1; text-align:right;
+}
+
+/* ── PENDING BANNER ── */
+.pending-banner {
+  display:flex; align-items:center; gap:10px;
+  background:#1a0a08; border:1px solid #c23b2250; border-radius:2px;
+  padding:10px 14px; margin-bottom:12px;
+  font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#e57373;
+}
+
+/* ── POOL VERIFY ── */
+.pool-verify { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pool-verify input {
+  background:var(--bg); border:1px solid #333; border-radius:2px;
+  font-family:'DM Mono',monospace; font-size:12px; color:#ccc;
+  padding:5px 8px; width:130px; outline:none;
+}
+.pool-verify input::placeholder { color:#444; }
+.pool-verify input:focus { border-color:#555; }
+.verify-ok  { font-size:10px; font-weight:700; color:#4caf50; white-space:nowrap; }
+.verify-err { font-size:10px; font-weight:700; color:#e57373; white-space:nowrap; }
+
+/* ── NAV BADGE ── */
+.nav-badge {
+  display:inline-block; width:7px; height:7px; border-radius:50%;
+  background:var(--red); margin-left:5px; vertical-align:middle;
+  animation:pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity:1; } 50% { opacity:.3; }
+}
+
+/* ── HIST EMP FILTER ── */
+.hist-emp-select {
+  flex:1; min-width:150px;
+}
+
 /* ── POOL TOTALS BAR ── */
 .pool-bar {
   background:var(--ink); border-radius:2px; padding:16px 20px;
@@ -473,7 +522,7 @@ header {
 </header>
 
 <div class="nav-tabs">
-  <div class="nav-tab active" data-view="turno"    onclick="showView('turno')">Turno</div>
+  <div class="nav-tab active" data-view="turno"    onclick="showView('turno')">Turno<span class="nav-badge" id="turno-nav-badge" style="display:none"></span></div>
   <div class="nav-tab"        data-view="historial" onclick="showView('historial')">Historial</div>
   <div class="nav-tab"        data-view="resumen"   onclick="showView('resumen')">Resumen</div>
   <div class="nav-tab"        data-view="admin"     onclick="showView('admin')">Admin</div>
@@ -484,6 +533,9 @@ header {
 
   <!-- ══════════════════════════════════ TURNO ══════════════════════════════════ -->
   <div class="view active" id="view-turno">
+    <div id="turno-pending-banner" class="pending-banner" style="display:none">
+      ⚠ No hay turno registrado para hoy todavía
+    </div>
     <div class="turno-config">
       <div class="form-group">
         <div class="form-label">Fecha</div>
@@ -506,6 +558,16 @@ header {
 
     <div id="turno-edit-banner" style="display:none"></div>
 
+    <div class="efectivo-row">
+      <span class="efectivo-label">💵 Efectivo</span>
+      <div class="emp-tips-wrap" style="max-width:180px">
+        <span class="emp-tips-prefix">₡</span>
+        <input type="number" class="emp-input-tips" id="efectivo-input"
+          placeholder="0" step="100" min="0" oninput="onEfectivoChange()">
+      </div>
+      <span class="efectivo-hint">Propina en efectivo (al pool general)</span>
+    </div>
+
     <div id="turno-sections"></div>
 
     <div class="pool-bar" id="pool-bar">
@@ -524,6 +586,13 @@ header {
       <div class="pool-item">
         <div class="pool-label">Distribuido</div>
         <div class="pool-val gold" id="pool-dist">₡ 0</div>
+      </div>
+      <div class="pool-item">
+        <div class="pool-label">Verificar total</div>
+        <div class="pool-verify">
+          <input type="number" id="pool-expected" placeholder="opcional" step="100" min="0" oninput="validatePool()">
+          <span id="pool-verify-badge"></span>
+        </div>
       </div>
     </div>
 
@@ -553,6 +622,9 @@ header {
           style="width:58px;text-align:center" oninput="filterHistorialDia()">
         <button class="btn btn-ghost btn-sm" onclick="clearHistDia()" style="padding:6px 10px;font-size:9px">✕</button>
       </div>
+      <select class="form-select hist-emp-select" id="hist-emp-filter" onchange="filterHistorialEmp()">
+        <option value="">Todos los empleados</option>
+      </select>
     </div>
     <div id="historial-list"></div>
   </div>
@@ -693,6 +765,7 @@ header {
     <div class="modal-actions">
       <button class="btn btn-red btn-sm" id="modal-det-del" onclick="deleteTurnoFromModal()">Eliminar</button>
       <button class="btn btn-teal btn-sm" onclick="editTurno(TURNO_DETAIL_ID)">✏ Editar</button>
+      <button class="btn btn-ghost btn-sm" onclick="shareTurno(TURNO_DETAIL_ID)">📋 Copiar</button>
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-turno-det')">Cerrar</button>
     </div>
   </div>
@@ -715,7 +788,7 @@ let ROLES_DATA  = JSON.parse(localStorage.getItem('prop_roles')     || '[]');
 let TURNOS_CACHE= JSON.parse(localStorage.getItem('prop_turnos')    || '[]');
 
 // Draft del turno en curso
-let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], editingId: null };
+let DRAFT = { fecha:'', turno:'PM', lineas:[], coberturas:[], editingId: null, efectivo: '' };
 let _cobPickerRol = null;
 
 // Turno seleccionado en modal detail
@@ -861,6 +934,7 @@ async function init() {
 
   await syncAll();
   tryRestoreDraft();
+  checkTurnoAlert();
 
   // Iniciar desde el último turno registrado (en background)
   // Solo actualizar fecha si no hay borrador activo restaurado
@@ -878,6 +952,7 @@ async function init() {
           updateTurnoMeta();
         }
       }
+      checkTurnoAlert();
     }
   }).catch(() => {
     const hasDraft = DRAFT.lineas.some(l => l.activo) || DRAFT.editingId;
@@ -1314,6 +1389,7 @@ function saveDraft() {
     fecha: DRAFT.fecha,
     turno: document.getElementById('turno-tipo')?.value || DRAFT.turno,
     editingId: DRAFT.editingId,
+    efectivo: DRAFT.efectivo,
     lineas: DRAFT.lineas.map(l => ({ id: l.id, activo: l.activo, horas: l.horas, propina_gen: l.propina_gen })),
     coberturas: DRAFT.coberturas
   }));
@@ -1325,11 +1401,14 @@ function tryRestoreDraft() {
   if (!d || !d.fecha) return;
 
   // Restaurar meta
-  DRAFT.fecha = d.fecha;
+  DRAFT.fecha     = d.fecha;
   DRAFT.editingId = d.editingId || null;
+  DRAFT.efectivo  = d.efectivo  || '';
   const tipoEl = document.getElementById('turno-tipo');
   if (tipoEl && d.turno) tipoEl.value = d.turno;
   document.getElementById('turno-fecha').value = d.fecha;
+  const efEl = document.getElementById('efectivo-input');
+  if (efEl && DRAFT.efectivo) efEl.value = DRAFT.efectivo;
   updateTurnoMeta();
 
   // Restaurar lineas activas
@@ -1353,6 +1432,98 @@ function onTurnoTipoChange() {
   saveDraft();
 }
 
+function onEfectivoChange() {
+  DRAFT.efectivo = document.getElementById('efectivo-input')?.value || '';
+  calcTurno();
+  validatePool();
+}
+
+// ── Validación del pool ───────────────────────────────────────
+function validatePool() {
+  const expected = parseFloat(document.getElementById('pool-expected')?.value) || 0;
+  const badge    = document.getElementById('pool-verify-badge');
+  if (!badge) return;
+  if (!expected) { badge.textContent = ''; return; }
+  const worked    = DRAFT.lineas.filter(l => l.activo);
+  const workedCob = DRAFT.coberturas.filter(c => c.activo);
+  const genSum = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const actual = genSum + (parseFloat(DRAFT.efectivo) || 0);
+  const diff   = actual - expected;
+  if (Math.abs(diff) < 100) {
+    badge.textContent = '✅ OK';
+    badge.className = 'verify-ok';
+  } else {
+    const sign = diff > 0 ? '+' : '';
+    badge.textContent = `⚠ ${sign}${fmtCRC(diff)}`;
+    badge.className = 'verify-err';
+  }
+}
+
+// ── Alerta turno sin cargar ───────────────────────────────────
+function checkTurnoAlert() {
+  const today   = todayStr();
+  const hasHoy  = TURNOS_CACHE.some(t => normalizarFecha(t.fecha) === today);
+  const badge   = document.getElementById('turno-nav-badge');
+  const banner  = document.getElementById('turno-pending-banner');
+  if (badge)  badge.style.display  = hasHoy ? 'none' : '';
+  if (banner) banner.style.display = hasHoy ? 'none' : '';
+}
+
+// ── Compartir turno ───────────────────────────────────────────
+function shareTurno(id) {
+  const t = TURNOS_CACHE.find(x => x.id === id);
+  if (!t) { toast('Turno no encontrado', 'error'); return; }
+  const d     = t.datos || {};
+  const fecha = normalizarFecha(t.fecha);
+  const dia   = t.dia_semana || getDia(fecha);
+  const tipo  = d.turno || 'PM';
+
+  // Formatear número sin símbolo
+  const n = v => Math.round(v || 0).toLocaleString('es-CR');
+
+  const lineas = d.lineas || [];
+  let lines = [`📊 Turno ${tipo} · ${dia} ${fecha}`, ''];
+
+  const grupos = {};
+  lineas.forEach(l => {
+    const seccion = ROL_NAMES[l.rol] || l.rol;
+    if (!grupos[seccion]) grupos[seccion] = [];
+    grupos[seccion].push(l);
+  });
+
+  Object.entries(grupos).forEach(([sec, emps]) => {
+    lines.push(sec);
+    emps.forEach(l => {
+      const nombre = (l.nombre + (l.cobertura ? ' (cob)' : '')).padEnd(18);
+      lines.push(`  ${nombre}₡ ${n(l.take_home)}`);
+    });
+    lines.push('');
+  });
+
+  if (d.pool_efectivo) lines.push(`💵 Efectivo: ₡ ${n(d.pool_efectivo)}`);
+  lines.push(`Pool total:  ₡ ${n(d.pool_total)}`);
+  lines.push(`₡ ${n(d.point_rate)} por punto`);
+
+  const text = lines.join('\n');
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => toast('Copiado al portapapeles', 'success'))
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select(); document.execCommand('copy');
+  document.body.removeChild(ta);
+  toast('Copiado al portapapeles', 'success');
+}
+
 // ── Editar turno existente ────────────────────────────────────
 function editTurno(id) {
   const t = TURNOS_CACHE.find(x => x.id === id);
@@ -1366,9 +1537,12 @@ function editTurno(id) {
   // Cargar meta
   DRAFT.fecha      = t.fecha;
   DRAFT.editingId  = id;
+  DRAFT.efectivo   = d.pool_efectivo ? String(d.pool_efectivo) : '';
   const tipoEl = document.getElementById('turno-tipo');
   if (tipoEl) tipoEl.value = d.turno || 'PM';
   document.getElementById('turno-fecha').value = t.fecha;
+  const efEl = document.getElementById('efectivo-input');
+  if (efEl) efEl.value = DRAFT.efectivo || '';
   updateTurnoMeta();
 
   // Restaurar empleados primarios
@@ -1405,8 +1579,9 @@ function calcTurno() {
   const worked    = DRAFT.lineas.filter(l => l.activo);
   const workedCob = DRAFT.coberturas.filter(c => c.activo);
 
-  // Pool total: suma de propinas generadas por todos (cocina no genera, su propina_gen es 0)
-  const pool = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  // Pool total: propinas generadas + efectivo en cash
+  const efectivo = parseFloat(DRAFT.efectivo) || 0;
+  const pool = efectivo + [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
 
   // Puntos de todos (horas × pts/hora según rol)
   worked.forEach(l => {
@@ -1505,18 +1680,38 @@ async function saveTurno() {
     DRAFT.editingId = duplicate.id; // sobreescribir ese registro
   }
 
+  // Validación pool (si hay valor esperado ingresado)
+  const expectedVal = parseFloat(document.getElementById('pool-expected')?.value) || 0;
+  if (expectedVal) {
+    const genSum   = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+    const actualPool = genSum + (parseFloat(DRAFT.efectivo) || 0);
+    if (Math.abs(actualPool - expectedVal) >= 100) {
+      const diff = actualPool - expectedVal;
+      const ok = confirm(
+        `⚠ El pool ingresado no cuadra con el total esperado.\n\n` +
+        `Esperado: ₡${Math.round(expectedVal).toLocaleString('es-CR')}\n` +
+        `Calculado: ₡${Math.round(actualPool).toLocaleString('es-CR')}\n` +
+        `Diferencia: ${diff > 0 ? '+' : ''}₡${Math.round(diff).toLocaleString('es-CR')}\n\n` +
+        `¿Guardar de todas formas?`
+      );
+      if (!ok) return;
+    }
+  }
+
   const isEditing = !!DRAFT.editingId;
   calcTurno();
 
-  const pool     = [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
+  const efectivo = parseFloat(DRAFT.efectivo) || 0;
+  const pool     = efectivo + [...worked, ...workedCob].reduce((s, l) => s + (parseFloat(l.propina_gen) || 0), 0);
   const totalPts = [...worked, ...workedCob].reduce((s, l) => s + l.pts_val, 0);
   const rate     = totalPts > 0 ? pool / totalPts : 0;
 
   const datos = {
     turno: turnoTipo,
     pool_total: pool,
-    pool_sala: pool,
+    pool_sala: pool - efectivo,
     pool_cocina: 0,
+    pool_efectivo: efectivo,
     total_pts_val: totalPts,
     point_rate: rate,
     lineas: [
@@ -1552,6 +1747,7 @@ async function saveTurno() {
   localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
   localStorage.removeItem('prop_draft');
   toast(isEditing ? 'Turno actualizado' : 'Turno guardado', 'success');
+  checkTurnoAlert();
   resetTurno();
 
   // ── 2. Intentar sync con backend en background ──────────────
@@ -1578,8 +1774,15 @@ function resetTurno() {
   });
   DRAFT.coberturas = [];
   DRAFT.editingId  = null;
+  DRAFT.efectivo   = '';
   _cobPickerRol    = null;
   localStorage.removeItem('prop_draft');
+  const efEl = document.getElementById('efectivo-input');
+  if (efEl) efEl.value = '';
+  const expEl = document.getElementById('pool-expected');
+  if (expEl) expEl.value = '';
+  const badge = document.getElementById('pool-verify-badge');
+  if (badge) badge.textContent = '';
   renderTurno();
 }
 
@@ -1611,26 +1814,48 @@ async function loadHistorial() {
 
 let _histTurnosFiltrados = [];
 
-function filterHistorialDia() {
-  const dia = parseInt(document.getElementById('hist-dia').value);
-  const lista = isNaN(dia)
-    ? _histTurnosFiltrados
-    : _histTurnosFiltrados.filter(t => {
-        const d = new Date(t.fecha + 'T12:00:00');
-        return d.getDate() === dia;
-      });
+function _applyHistFilters() {
+  const dia = parseInt(document.getElementById('hist-dia')?.value);
+  const emp = document.getElementById('hist-emp-filter')?.value || '';
+  let lista = _histTurnosFiltrados;
+  if (!isNaN(dia)) {
+    lista = lista.filter(t => {
+      const d = new Date(t.fecha + 'T12:00:00');
+      return d.getDate() === dia;
+    });
+  }
+  if (emp) {
+    lista = lista.filter(t =>
+      (t.datos?.lineas || []).some(l => l.nombre === emp)
+    );
+  }
   _renderHistorialHTML(lista);
 }
 
+function filterHistorialDia() { _applyHistFilters(); }
+function filterHistorialEmp() { _applyHistFilters(); }
+
 function clearHistDia() {
   document.getElementById('hist-dia').value = '';
-  _renderHistorialHTML(_histTurnosFiltrados);
+  _applyHistFilters();
+}
+
+function _poblarFiltroEmpleado(turnos) {
+  const sel = document.getElementById('hist-emp-filter');
+  if (!sel) return;
+  const nombres = new Set();
+  turnos.forEach(t => (t.datos?.lineas || []).forEach(l => { if (l.nombre) nombres.add(l.nombre); }));
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Todos los empleados</option>' +
+    [...nombres].sort().map(n => `<option value="${n}"${n === cur ? ' selected' : ''}>${n}</option>`).join('');
 }
 
 function renderHistorial(turnos) {
-  _histTurnosFiltrados = [...turnos].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  _histTurnosFiltrados = [...turnos].sort((a, b) => b.fecha.localeCompare(a.fecha));
   document.getElementById('hist-dia').value = '';
-  _renderHistorialHTML(_histTurnosFiltrados);
+  _poblarFiltroEmpleado(_histTurnosFiltrados);
+  _applyHistFilters();
+  checkTurnoAlert();
 }
 
 function _renderHistorialHTML(turnos) {
