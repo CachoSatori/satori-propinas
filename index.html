@@ -303,7 +303,7 @@ header {
   display:flex; align-items:center; justify-content:space-between;
   padding:14px 18px;
 }
-.hist-fecha { font-size:12px; font-weight:700; letter-spacing:.03em; }
+.hist-fecha { font-size:12px; font-weight:700; letter-spacing:.03em; white-space:nowrap; }
 .hist-meta { font-size:9px; color:var(--muted); margin-top:2px; }
 .hist-total { font-family:'Syne',sans-serif; font-size:16px; font-weight:800; color:var(--teal); }
 .hist-actions { display:flex; gap:8px; align-items:center; }
@@ -395,8 +395,8 @@ header {
 
 /* ── FILTERS ── */
 .filters-bar {
-  display:flex; gap:10px; flex-wrap:wrap; align-items:center;
-  padding:12px 16px; background:var(--panel); border:1px solid var(--border);
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  padding:10px 16px; background:var(--panel); border:1px solid var(--border);
   border-radius:2px; margin-bottom:20px;
 }
 .filters-bar label { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#666; }
@@ -555,6 +555,12 @@ header {
       </select>
       <label>Año</label>
       <input type="number" class="form-input" id="hist-anio" value="2026" style="width:80px" onchange="loadHistorial()">
+      <div style="display:flex;align-items:center;gap:6px;margin-left:4px">
+        <label style="margin:0">Día</label>
+        <input type="number" class="form-input" id="hist-dia" placeholder="—" min="1" max="31"
+          style="width:58px;text-align:center" oninput="filterHistorialDia()">
+        <button class="btn btn-ghost btn-sm" onclick="clearHistDia()" style="padding:6px 10px;font-size:9px">✕</button>
+      </div>
     </div>
     <div id="historial-list"></div>
   </div>
@@ -1505,7 +1511,31 @@ async function loadHistorial() {
   }
 }
 
+let _histTurnosFiltrados = [];
+
+function filterHistorialDia() {
+  const dia = parseInt(document.getElementById('hist-dia').value);
+  const lista = isNaN(dia)
+    ? _histTurnosFiltrados
+    : _histTurnosFiltrados.filter(t => {
+        const d = new Date(t.fecha + 'T12:00:00');
+        return d.getDate() === dia;
+      });
+  _renderHistorialHTML(lista);
+}
+
+function clearHistDia() {
+  document.getElementById('hist-dia').value = '';
+  _renderHistorialHTML(_histTurnosFiltrados);
+}
+
 function renderHistorial(turnos) {
+  _histTurnosFiltrados = [...turnos].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  document.getElementById('hist-dia').value = '';
+  _renderHistorialHTML(_histTurnosFiltrados);
+}
+
+function _renderHistorialHTML(turnos) {
   const el = document.getElementById('historial-list');
   if (!turnos.length) { el.innerHTML = '<div class="empty">No hay turnos registrados para este período.</div>'; return; }
 
