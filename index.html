@@ -156,7 +156,9 @@ header {
   text-align:right; letter-spacing:.02em;
 }
 .emp-take-badge.zero { color:#333; }
-.emp-inactive .emp-fields-col { opacity:.25; pointer-events:none; }
+.emp-fields-col.emp-inactive { display:none; }
+.emp-row:not(.worked) { grid-template-columns:1fr; }
+.emp-row:not(.worked) .emp-label-col { border-right:none; }
 .emp-input-sm {
   border:1px solid var(--border); padding:7px 10px;
   font-family:'DM Mono',monospace; font-size:11px; background:var(--paper);
