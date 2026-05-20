@@ -525,8 +525,8 @@ header {
   <div class="nav-tab active" data-view="turno"    onclick="showView('turno')">Turno<span class="nav-badge" id="turno-nav-badge" style="display:none"></span></div>
   <div class="nav-tab"        data-view="historial" onclick="showView('historial')">Historial</div>
   <div class="nav-tab"        data-view="resumen"   onclick="showView('resumen')">Resumen</div>
-  <div class="nav-tab"        data-view="admin"     onclick="showView('admin')">Admin</div>
   <div class="nav-tab"        data-view="empleado"  onclick="showView('empleado')">Mi cuenta</div>
+  <div class="nav-tab"        data-view="admin"     onclick="showView('admin')">Admin</div>
 </div>
 
 <div class="main">
@@ -644,6 +644,9 @@ header {
       <label>Año</label>
       <input type="number" class="form-input" id="res-anio" value="2026" style="width:80px" onchange="loadResumen()">
       <button class="btn btn-ghost btn-sm" onclick="loadResumen()">Actualizar</button>
+      <select class="form-select hist-emp-select" id="res-emp-filter" onchange="renderResumenFiltrado()">
+        <option value="">Todos los empleados</option>
+      </select>
     </div>
     <div class="kpi-bar" id="res-kpis"></div>
     <div id="resumen-content"></div>
@@ -936,35 +939,14 @@ async function init() {
   tryRestoreDraft();
   checkTurnoAlert();
 
-  // Iniciar desde el último turno registrado (en background)
-  // Solo actualizar fecha si no hay borrador activo restaurado
+  // Cargar historial en background para tener el cache actualizado
   apiFetch({ action:'getTurnosPropinas' }).then(res => {
-    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
-      const todos = res.data.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
-      TURNOS_CACHE = todos;
-      localStorage.setItem('prop_turnos', JSON.stringify(todos));
-      const hasDraft = DRAFT.lineas.some(l => l.activo) || DRAFT.editingId;
-      if (!hasDraft) {
-        const lastFecha = todos[0]?.fecha;
-        if (lastFecha) {
-          document.getElementById('turno-fecha').value = lastFecha;
-          DRAFT.fecha = lastFecha;
-          updateTurnoMeta();
-        }
-      }
+    if (res.ok && Array.isArray(res.data)) {
+      TURNOS_CACHE = res.data.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+      localStorage.setItem('prop_turnos', JSON.stringify(TURNOS_CACHE));
       checkTurnoAlert();
     }
-  }).catch(() => {
-    const hasDraft = DRAFT.lineas.some(l => l.activo) || DRAFT.editingId;
-    if (!hasDraft && TURNOS_CACHE.length > 0) {
-      const lastFecha = normalizarFecha(TURNOS_CACHE[0].fecha);
-      if (lastFecha) {
-        document.getElementById('turno-fecha').value = lastFecha;
-        DRAFT.fecha = lastFecha;
-        updateTurnoMeta();
-      }
-    }
-  });
+  }).catch(() => {});
 
   renderTurno();
   renderAdmin();
@@ -1983,8 +1965,9 @@ async function loadResumen() {
   }
 }
 
+let _resEmpList = []; // para que renderResumenFiltrado pueda acceder
+
 function renderResumen(turnos, mes, anio) {
-  // Aggregate by employee name
   const byEmp = {};
 
   turnos.forEach(t => {
@@ -1995,32 +1978,30 @@ function renderResumen(turnos, mes, anio) {
       const key = l.nombre + '|' + l.rol;
       if (!byEmp[key]) byEmp[key] = {
         nombre: l.nombre, rol: l.rol, total: 0,
-        q1days: 0, q2days: 0, q1earn: 0, q2earn: 0,
-        gen_total: 0
+        q1days: 0, q2days: 0, q1earn: 0, q2earn: 0, gen_total: 0
       };
       const e = byEmp[key];
       e.total    += l.take_home;
-      e.gen_total+= l.propina_gen || 0;
+      e.gen_total += l.propina_gen || 0;
       if (isQ1) { e.q1days++; e.q1earn += l.take_home; }
       else       { e.q2days++; e.q2earn += l.take_home; }
     });
   });
 
-  const empList = Object.values(byEmp).map(e => ({
+  _resEmpList = Object.values(byEmp).map(e => ({
     ...e,
     q1avg: e.q1days > 0 ? e.q1earn / e.q1days : null,
     q2avg: e.q2days > 0 ? e.q2earn / e.q2days : null,
     avg:   (e.q1days + e.q2days) > 0 ? e.total / (e.q1days + e.q2days) : null
   }));
 
-  const totalMes    = empList.reduce((s, e) => s + e.total, 0);
+  const totalMes    = _resEmpList.reduce((s, e) => s + e.total, 0);
   const totalTurnos = turnos.length;
   const poolMes     = turnos.reduce((s, t) => s + (t.datos?.pool_total || 0), 0);
 
-  // KPIs
   document.getElementById('res-kpis').innerHTML = `
     <div class="kpi-card gold">
-      <div class="kpi-label">Total propinas del mes</div>
+      <div class="kpi-label">Pool del mes</div>
       <div class="kpi-val gold">${fmtCRC(poolMes)}</div>
     </div>
     <div class="kpi-card">
@@ -2028,29 +2009,103 @@ function renderResumen(turnos, mes, anio) {
       <div class="kpi-val">${fmtCRC(totalMes)}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Turnos registrados</div>
+      <div class="kpi-label">Turnos</div>
       <div class="kpi-val">${totalTurnos}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Empleados con propinas</div>
-      <div class="kpi-val">${empList.length}</div>
+      <div class="kpi-label">Empleados</div>
+      <div class="kpi-val">${new Set(_resEmpList.map(e => e.nombre)).size}</div>
     </div>`;
 
-  if (!empList.length) {
-    document.getElementById('resumen-content').innerHTML =
-      '<div class="empty">No hay datos para este período.</div>';
+  // Poblar filtro de empleados
+  const sel = document.getElementById('res-emp-filter');
+  if (sel) {
+    const cur = sel.value;
+    const nombres = [...new Set(_resEmpList.map(e => e.nombre))].sort();
+    sel.innerHTML = '<option value="">Todos los empleados</option>'
+      + nombres.map(n => `<option value="${n}"${n === cur ? ' selected' : ''}>${n}</option>`).join('');
+  }
+
+  renderResumenFiltrado();
+}
+
+function renderResumenFiltrado() {
+  const filtro = document.getElementById('res-emp-filter')?.value || '';
+  const el     = document.getElementById('resumen-content');
+  if (!_resEmpList.length) {
+    el.innerHTML = '<div class="empty">No hay datos para este período.</div>';
     return;
   }
 
-  // Build sections by role
+  if (filtro) {
+    // Vista de un empleado específico
+    const entradas = _resEmpList.filter(e => e.nombre === filtro);
+    if (!entradas.length) {
+      el.innerHTML = `<div class="empty">No hay datos para ${filtro} en este período.</div>`;
+      return;
+    }
+    const totalEmp   = entradas.reduce((s, e) => s + e.total, 0);
+    const totalDias  = entradas.reduce((s, e) => s + e.q1days + e.q2days, 0);
+    const totalQ1    = entradas.reduce((s, e) => s + e.q1earn, 0);
+    const totalQ2    = entradas.reduce((s, e) => s + e.q2earn, 0);
+    const diasQ1     = entradas.reduce((s, e) => s + e.q1days, 0);
+    const diasQ2     = entradas.reduce((s, e) => s + e.q2days, 0);
+
+    let html = `
+      <div class="res-section">
+        <div class="res-section-hdr">
+          <span>${filtro}</span>
+          <span>${fmtCRC(totalEmp)}</span>
+        </div>
+        <div class="res-hdr-row">
+          <span>Rol</span><span></span>
+          <span style="text-align:center">Días Q1</span>
+          <span style="text-align:center">Días Q2</span>
+          <span style="text-align:right">Prom Q1</span>
+          <span style="text-align:right">Prom Q2</span>
+          <span style="text-align:right">Total</span>
+        </div>
+        ${entradas.map(e => `
+          <div class="res-row">
+            <span>${rolLabel(e.rol)}</span><span></span>
+            <span class="res-col-c">${e.q1days}</span>
+            <span class="res-col-c">${e.q2days}</span>
+            <span class="res-col-r">${e.q1avg ? fmtCRC(e.q1avg) : '—'}</span>
+            <span class="res-col-r">${e.q2avg ? fmtCRC(e.q2avg) : '—'}</span>
+            <span class="res-col-r">${fmtCRC(e.total)}</span>
+          </div>`).join('')}
+        ${entradas.length > 1 ? `
+        <div class="res-row total-row">
+          <span>TOTAL</span><span></span>
+          <span class="res-col-c">${diasQ1}</span>
+          <span class="res-col-c">${diasQ2}</span>
+          <span class="res-col-r">${diasQ1 > 0 ? fmtCRC(totalQ1/diasQ1) : '—'}</span>
+          <span class="res-col-r">${diasQ2 > 0 ? fmtCRC(totalQ2/diasQ2) : '—'}</span>
+          <span class="res-col-r">${fmtCRC(totalEmp)}</span>
+        </div>` : ''}
+      </div>
+      <div class="res-section">
+        <div class="res-row total-row" style="background:#0a0a0a;color:#7ec8b8">
+          <span>TOTAL ${filtro.toUpperCase()}</span><span></span>
+          <span class="res-col-c">${diasQ1}</span>
+          <span class="res-col-c">${diasQ2}</span>
+          <span class="res-col-r">${diasQ1 > 0 ? fmtCRC(totalQ1/diasQ1) : '—'}</span>
+          <span class="res-col-r">${diasQ2 > 0 ? fmtCRC(totalQ2/diasQ2) : '—'}</span>
+          <span class="res-col-r">${fmtCRC(totalEmp)}</span>
+        </div>
+      </div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  // Vista completa (todos los empleados)
+  const totalMes = _resEmpList.reduce((s, e) => s + e.total, 0);
   let html = '';
   ROL_ORDER.forEach(rol => {
-    const emps = empList.filter(e => e.rol === rol);
+    const emps = _resEmpList.filter(e => e.rol === rol);
     if (!emps.length) return;
-
     emps.sort((a,b) => b.total - a.total);
     const secTotal = emps.reduce((s,e) => s + e.total, 0);
-
     html += `
       <div class="res-section">
         <div class="res-section-hdr">
@@ -2058,8 +2113,7 @@ function renderResumen(turnos, mes, anio) {
           <span>${fmtCRC(secTotal)}</span>
         </div>
         <div class="res-hdr-row">
-          <span>Nombre</span>
-          <span></span>
+          <span>Nombre</span><span></span>
           <span style="text-align:center">Días Q1</span>
           <span style="text-align:center">Días Q2</span>
           <span style="text-align:right">Prom Q1</span>
@@ -2068,8 +2122,7 @@ function renderResumen(turnos, mes, anio) {
         </div>
         ${emps.map(e => `
           <div class="res-row">
-            <span>${e.nombre}</span>
-            <span></span>
+            <span>${e.nombre}</span><span></span>
             <span class="res-col-c">${e.q1days}</span>
             <span class="res-col-c">${e.q2days}</span>
             <span class="res-col-r">${e.q1avg ? fmtCRC(e.q1avg) : '—'}</span>
@@ -2078,17 +2131,11 @@ function renderResumen(turnos, mes, anio) {
           </div>`).join('')}
         <div class="res-row total-row">
           <span>TOTAL ${ROL_NAMES[rol].toUpperCase()}</span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
+          <span></span><span></span><span></span><span></span><span></span>
           <span class="res-col-r">${fmtCRC(secTotal)}</span>
         </div>
       </div>`;
   });
-
-  // Global total
   html += `
     <div class="res-section">
       <div class="res-row total-row" style="background:#0a0a0a;color:#7ec8b8">
@@ -2097,8 +2144,7 @@ function renderResumen(turnos, mes, anio) {
         <span class="res-col-r">${fmtCRC(totalMes)}</span>
       </div>
     </div>`;
-
-  document.getElementById('resumen-content').innerHTML = html;
+  el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2329,39 +2375,59 @@ function renderMiCuenta() {
     return;
   }
 
-  // Agregar todos los turnos de este empleado por mes
-  const byMes = {}; // "2026-05" → { dias, total, pts }
+  // Agregar todos los turnos de este empleado por mes, con desglose completo
+  const byMes = {};
   TURNOS_CACHE.forEach(t => {
-    const fecha  = normalizarFecha(t.fecha);
-    const mesKey = fecha.substring(0, 7);
-    const linea  = (t.datos?.lineas || []).find(l => l.nombre === nombre);
-    if (!linea) return;
-    if (!byMes[mesKey]) byMes[mesKey] = { dias:0, total:0, pts:0 };
-    byMes[mesKey].dias++;
-    byMes[mesKey].total += linea.take_home  || 0;
-    byMes[mesKey].pts   += linea.pts_val    || 0;
+    const fecha   = normalizarFecha(t.fecha);
+    const mesKey  = fecha.substring(0, 7);
+    const day     = parseInt(fecha.split('-')[2]);
+    const isQ1    = day >= 1 && day <= 15;
+    const lineas  = (t.datos?.lineas || []).filter(l => l.nombre === nombre);
+    if (!lineas.length) return;
+
+    if (!byMes[mesKey]) byMes[mesKey] = {
+      dias: 0, total: 0, pts: 0,
+      q1earn: 0, q2earn: 0, q1dias: 0, q2dias: 0,
+      turnos: []
+    };
+    const m = byMes[mesKey];
+    // Contar 1 día por turno aunque aparezca en múltiples lineas (cobertura)
+    m.dias++;
+    if (isQ1) m.q1dias++; else m.q2dias++;
+
+    lineas.forEach(l => {
+      m.total += l.take_home || 0;
+      m.pts   += l.pts_val   || 0;
+      if (isQ1) m.q1earn += l.take_home || 0;
+      else      m.q2earn += l.take_home || 0;
+      m.turnos.push({
+        fecha, turno: t.datos?.turno || 'PM',
+        rol: l.rol, horas: l.horas || 0,
+        pts_val: l.pts_val || 0, take_home: l.take_home || 0,
+        cobertura: l.cobertura || false
+      });
+    });
   });
 
-  const meses = Object.keys(byMes).sort().reverse(); // más reciente primero
+  const meses = Object.keys(byMes).sort().reverse();
 
   if (!meses.length) {
     el.innerHTML = '<div class="mc-empty">No hay turnos registrados para este empleado.</div>';
     return;
   }
 
-  // Mes actual
   const now    = new Date();
   const curKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const cur    = byMes[curKey] || null;
 
-  // Totales generales
-  const totalAcum = meses.reduce((s,m) => s + byMes[m].total, 0);
-  const diasAcum  = meses.reduce((s,m) => s + byMes[m].dias,  0);
+  const totalAcum  = meses.reduce((s,m) => s + byMes[m].total,   0);
+  const diasAcum   = meses.reduce((s,m) => s + byMes[m].dias,    0);
+  const totalQ1All = meses.reduce((s,m) => s + byMes[m].q1earn,  0);
+  const totalQ2All = meses.reduce((s,m) => s + byMes[m].q2earn,  0);
+  const diasQ1All  = meses.reduce((s,m) => s + byMes[m].q1dias,  0);
+  const diasQ2All  = meses.reduce((s,m) => s + byMes[m].q2dias,  0);
 
-  // Máximo mensual para las barras
   const maxMes = Math.max(...meses.map(m => byMes[m].total));
-
-  // Rol del empleado
   const empObj = EMPLEADOS.find(e => e.nombre === nombre);
   const rolText = empObj ? rolLabel(empObj.rol) : '';
 
@@ -2387,59 +2453,106 @@ function renderMiCuenta() {
         <div class="kpi-val">${cur ? cur.dias : 0}</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Promedio / día</div>
+        <div class="kpi-label">Prom / día (mes)</div>
         <div class="kpi-val">${cur && cur.dias > 0 ? fmtCRC(Math.round(cur.total / cur.dias)) : '—'}</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Días totales</div>
-        <div class="kpi-val">${diasAcum}</div>
+        <div class="kpi-label">Prom / día (general)</div>
+        <div class="kpi-val teal">${diasAcum > 0 ? fmtCRC(Math.round(totalAcum / diasAcum)) : '—'}</div>
       </div>
     </div>
 
-    <div style="background:var(--panel);border:1px solid var(--border);border-radius:2px;padding:0 0 8px">
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:2px;overflow:hidden;margin-bottom:8px">
       <table class="mc-mes-table">
         <thead>
           <tr>
+            <th></th>
             <th>Mes</th>
             <th style="text-align:center">Días</th>
-            <th style="text-align:right">Promedio / día</th>
+            <th style="text-align:right">Prom Q1</th>
+            <th style="text-align:right">Prom Q2</th>
+            <th style="text-align:right">Prom/día</th>
             <th style="text-align:right">Total</th>
           </tr>
         </thead>
         <tbody>
           ${meses.map(m => {
-            const d   = byMes[m];
-            const avg = d.dias > 0 ? Math.round(d.total / d.dias) : 0;
+            const d      = byMes[m];
+            const avg    = d.dias   > 0 ? Math.round(d.total / d.dias) : 0;
+            const q1avg  = d.q1dias > 0 ? Math.round(d.q1earn / d.q1dias) : null;
+            const q2avg  = d.q2dias > 0 ? Math.round(d.q2earn / d.q2dias) : null;
             const [y, mo] = m.split('-');
             const esCur   = m === curKey;
+            const safeKey = m.replace('-','_');
             const barPct  = maxMes > 0 ? Math.round((d.total / maxMes) * 100) : 0;
-            return `<tr class="mc-mes-row" style="${esCur ? 'background:#f5f2ec;' : ''}">
-              <td>
-                <span class="mc-mes-nombre">${MESES_ES[parseInt(mo)-1]}</span>
-                <span class="mc-mes-anio">${y}</span>
-                ${esCur ? '<span style="font-size:8px;color:var(--teal);margin-left:6px;letter-spacing:.1em">● HOY</span>' : ''}
-              </td>
-              <td style="text-align:center">${d.dias}</td>
-              <td style="text-align:right;color:var(--muted)">${fmtCRC(avg)}</td>
-              <td style="text-align:right">
-                <span class="mc-bar-wrap"><span class="mc-bar-fill" style="width:${barPct}%"></span></span>
-                <span class="mc-mes-total">${fmtCRC(d.total)}</span>
-              </td>
-            </tr>`;
+            const detailRows = d.turnos.sort((a,b) => a.fecha.localeCompare(b.fecha)).map(tr => `
+              <tr class="mc-turno-row">
+                <td></td>
+                <td style="padding-left:20px;color:var(--muted);font-size:10px">${tr.fecha} · ${tr.turno}${tr.cobertura ? ' <span style="color:var(--gold);font-size:9px">COB</span>' : ''}</td>
+                <td style="text-align:center;color:var(--muted);font-size:10px">${tr.horas}h</td>
+                <td style="text-align:right;color:var(--muted);font-size:10px" colspan="2">${rolLabel(tr.rol)} · ${fmtNum(tr.pts_val)} pts</td>
+                <td style="text-align:right;font-size:10px"></td>
+                <td style="text-align:right;font-family:'Syne',sans-serif;font-weight:700;font-size:11px;color:var(--ink)">${fmtCRC(tr.take_home)}</td>
+              </tr>`).join('');
+            return `
+              <tr class="mc-mes-row" onclick="toggleMiMes('${safeKey}')" style="${esCur ? 'background:#f5f2ec;' : ''}cursor:pointer">
+                <td style="padding:10px 8px;color:#aaa;font-size:11px" id="mc-arr-${safeKey}">▶</td>
+                <td>
+                  <span class="mc-mes-nombre">${MESES_ES[parseInt(mo)-1]}</span>
+                  <span class="mc-mes-anio">${y}</span>
+                  ${esCur ? '<span style="font-size:8px;color:var(--teal);margin-left:6px;letter-spacing:.1em">● HOY</span>' : ''}
+                </td>
+                <td style="text-align:center">${d.dias}</td>
+                <td style="text-align:right;color:var(--muted)">${q1avg ? fmtCRC(q1avg) : '—'}</td>
+                <td style="text-align:right;color:var(--muted)">${q2avg ? fmtCRC(q2avg) : '—'}</td>
+                <td style="text-align:right;color:var(--muted)">${fmtCRC(avg)}</td>
+                <td style="text-align:right">
+                  <span class="mc-bar-wrap"><span class="mc-bar-fill" style="width:${barPct}%"></span></span>
+                  <span class="mc-mes-total">${fmtCRC(d.total)}</span>
+                </td>
+              </tr>
+              <tr id="mc-det-${safeKey}" style="display:none;background:#fafafa">
+                <td colspan="7" style="padding:0">
+                  <table style="width:100%;border-collapse:collapse">
+                    ${detailRows}
+                    <tr style="background:#f0ede8;border-top:1px solid var(--border)">
+                      <td></td>
+                      <td style="padding:8px 8px 8px 20px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7a5a10">
+                        Q1: ${d.q1dias} días · ${q1avg ? fmtCRC(q1avg)+'/día' : '—'}
+                        &nbsp;&nbsp;|&nbsp;&nbsp;
+                        Q2: ${d.q2dias} días · ${q2avg ? fmtCRC(q2avg)+'/día' : '—'}
+                      </td>
+                      <td colspan="5" style="text-align:right;padding:8px 12px;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;color:var(--gold)">${fmtCRC(d.total)}</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>`;
           }).join('')}
         </tbody>
         <tfoot>
-          <tr style="border-top:2px solid var(--border)">
-            <td style="padding:12px;font-weight:700;font-size:11px;letter-spacing:.05em">TOTAL</td>
-            <td style="padding:12px;text-align:center;font-weight:700">${diasAcum}</td>
-            <td style="padding:12px;text-align:right;color:var(--muted)">${diasAcum > 0 ? fmtCRC(Math.round(totalAcum / diasAcum)) : '—'}</td>
-            <td style="padding:12px;text-align:right;font-weight:700;color:var(--gold)">${fmtCRC(totalAcum)}</td>
+          <tr style="border-top:2px solid var(--border);background:var(--ink)">
+            <td style="padding:12px 8px"></td>
+            <td style="padding:12px;font-weight:700;font-size:11px;letter-spacing:.05em;color:#fff">TOTAL</td>
+            <td style="padding:12px;text-align:center;font-weight:700;color:#fff">${diasAcum}</td>
+            <td style="padding:12px;text-align:right;color:var(--muted)">${diasQ1All > 0 ? fmtCRC(Math.round(totalQ1All/diasQ1All)) : '—'}</td>
+            <td style="padding:12px;text-align:right;color:var(--muted)">${diasQ2All > 0 ? fmtCRC(Math.round(totalQ2All/diasQ2All)) : '—'}</td>
+            <td style="padding:12px;text-align:right;color:#7ec8b8;font-weight:700">${diasAcum > 0 ? fmtCRC(Math.round(totalAcum/diasAcum)) : '—'}</td>
+            <td style="padding:12px;text-align:right;font-weight:700;color:var(--gold);font-family:'Syne',sans-serif;font-size:15px">${fmtCRC(totalAcum)}</td>
           </tr>
         </tfoot>
       </table>
     </div>`;
 
   el.innerHTML = html;
+}
+
+function toggleMiMes(safeKey) {
+  const det = document.getElementById('mc-det-' + safeKey);
+  const arr = document.getElementById('mc-arr-' + safeKey);
+  if (!det) return;
+  const isOpen = det.style.display !== 'none';
+  det.style.display = isOpen ? 'none' : '';
+  if (arr) arr.textContent = isOpen ? '▶' : '▼';
 }
 
 // ═══════════════════════════════════════════════════════════════
