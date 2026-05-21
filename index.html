@@ -783,6 +783,26 @@ header {
           </div>
         </div>
       </div>
+      <!-- Reporte mensual -->
+      <div>
+        <div class="sl">Reporte Mensual</div>
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <span class="admin-card-title">Email automático el 1° de cada mes</span>
+          </div>
+          <div style="padding:14px 16px;font-size:10px;color:var(--muted);line-height:1.7">
+            Resumen de ventas y propinas enviado automáticamente a
+            <strong style="color:var(--ink)">satorisushibar@gmail.com</strong>
+            el 1° de cada mes a las 8am. Activar una sola vez.
+          </div>
+          <div style="padding:0 16px 16px">
+            <button class="btn btn-teal btn-sm" onclick="activarReporteMensual()" style="width:100%">
+              📧 Activar reporte mensual
+            </button>
+            <div id="reporte-status" style="font-size:9px;color:var(--muted);margin-top:8px;text-align:center"></div>
+          </div>
+        </div>
+      </div>
       <!-- Roles y puntos -->
       <div>
         <div class="sl">Puntos por Rol</div>
@@ -2716,6 +2736,24 @@ function toggleMiMes(safeKey) {
   const isOpen = det.style.display !== 'none';
   det.style.display = isOpen ? 'none' : '';
   if (arr) arr.textContent = isOpen ? '▶' : '▼';
+}
+
+// ── Activar reporte mensual ───────────────────────────────────
+async function activarReporteMensual() {
+  const statusEl = document.getElementById('reporte-status');
+  if (statusEl) statusEl.textContent = 'Activando...';
+  try {
+    const res = await apiFetch({ action: 'setupReporteMensual' });
+    if (res.ok) {
+      if (statusEl) statusEl.textContent = '✅ Activado. Se enviará el 1° de cada mes.';
+      toast('Reporte mensual activado', 'success');
+    } else {
+      throw new Error(res.error || 'Error desconocido');
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '⚠ ' + e.message;
+    toast('Error al activar: ' + e.message, 'error');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

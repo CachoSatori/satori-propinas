@@ -1098,33 +1098,33 @@ function deleteTurnoPropinas(id) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// REPORTE MENSUAL DE PROPINAS
+// REPORTE MENSUAL COMBINADO (Ventas + Propinas)
 // ══════════════════════════════════════════════════════════════
 
 /**
- * Configurar trigger mensual (ejecutar una sola vez desde el editor de Apps Script,
- * o llamar vía GET: ?action=setupReporteMensual&secret=satori2026)
+ * Activa el trigger mensual.
+ * Llamar vía GET: ?action=setupReporteMensual&secret=satori2026
+ * o desde la pestaña Admin de la app de Propinas.
  */
 function setupReporteMensual() {
-  // Eliminar triggers duplicados
+  const HANDLER = 'reporteMensualCompleto';
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'reporteMensualPropinas') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === HANDLER ||
+        t.getHandlerFunction() === 'reporteMensualPropinas') {
+      ScriptApp.deleteTrigger(t);
+    }
   });
-  ScriptApp.newTrigger('reporteMensualPropinas')
+  ScriptApp.newTrigger(HANDLER)
     .timeBased().onMonthDay(1).atHour(8).inTimezone('America/Costa_Rica').create();
-  return { ok: true, msg: 'Trigger mensual creado. Se ejecutará el 1° de cada mes a las 8am (CR).' };
+  return { ok: true, msg: 'Reporte mensual activado. Se enviará el 1° de cada mes a las 8am a satorisushibar@gmail.com' };
 }
 
 /**
- * Genera y envía el reporte mensual de propinas por email.
+ * Reporte combinado de Ventas + Propinas.
  * Se ejecuta automáticamente el 1° de cada mes via trigger.
  */
-function reporteMensualPropinas() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ws = ss.getSheetByName(SHEET_PROP_TURNOS);
-  if (!ws || ws.getLastRow() < 2) return;
-
-  // Mes anterior (el reporte se genera el 1° → reporta el mes que terminó)
+function reporteMensualCompleto() {
+  const ss      = SpreadsheetApp.getActiveSpreadsheet();
   const hoy     = new Date();
   const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   const prefix  = Utilities.formatDate(mesPrev, 'America/Costa_Rica', 'yyyy-MM');
@@ -1132,92 +1132,159 @@ function reporteMensualPropinas() {
                    'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
   const mesNombre = MESES_N[mesPrev.getMonth()];
   const anio      = mesPrev.getFullYear();
+  const fmt  = v => '₡ ' + Math.round(v).toLocaleString('es-CR');
+  const kRow = (label, val, gold) =>
+    `<tr><td style="padding:7px 0;color:#555;font-size:13px;width:55%">${label}</td>` +
+    `<td style="padding:7px 0;font-size:13px;text-align:right;${gold?'font-weight:700;color:#c8a96e':''}">${val}</td></tr>`;
 
-  // Leer y filtrar turnos del mes anterior
-  const rows   = ws.getRange(2, 1, ws.getLastRow() - 1, 6).getValues();
-  const turnos = rows
-    .filter(r => String(r[1]).startsWith(prefix))
-    .map(r => ({ fecha: String(r[1]), datos: tryParse(r[4], {}) }));
+  // ── 1. VENTAS (dias sheet) ────────────────────────────────────
+  let ventSalon=0, ventRest=0, ventCaj=0, ventDel=0;
+  let pax=0, iCom=0, iBeb=0;
+  let diasVentas = 0;
+  const salMap = {};
 
-  if (!turnos.length) return; // Sin datos, no enviar email vacío
-
-  // Calcular métricas
-  let poolTotal = 0, poolBarra = 0;
-  let amCount = 0, pmCount = 0, amPool = 0, pmPool = 0;
-  const empMap = {};
-
-  turnos.forEach(t => {
-    const pool  = t.datos.pool_total || 0;
-    const barra = t.datos.pool_barra || 0;
-    poolTotal += pool;
-    poolBarra += barra;
-    const isAM = (t.datos.turno || 'PM') === 'AM';
-    if (isAM) { amCount++; amPool += pool; }
-    else       { pmCount++; pmPool += pool; }
-    (t.datos.lineas || []).forEach(l => {
-      if (!l.nombre) return;
-      if (!empMap[l.nombre]) empMap[l.nombre] = { take: 0, dias: 0, rol: l.rol || '' };
-      empMap[l.nombre].take += l.take_home || 0;
-      empMap[l.nombre].dias++;
+  const wsDias = ss.getSheetByName(SHEET_NAME_DIAS);
+  if (wsDias && wsDias.getLastRow() > 1) {
+    wsDias.getRange(2, 1, wsDias.getLastRow()-1, 3).getValues().forEach(r => {
+      let fecha = r[0] instanceof Date
+        ? Utilities.formatDate(r[0], 'America/Costa_Rica', 'yyyy-MM-dd')
+        : String(r[0]);
+      if (!fecha.startsWith(prefix)) return;
+      let day; try { day = JSON.parse(r[2]); } catch(e) { return; }
+      if (!day || !day.saloneros) return;
+      diasVentas++;
+      Object.entries(day.saloneros).forEach(([nombre, s]) => {
+        if (s.esCajero) {
+          ventCaj += s.total  || 0;
+          ventDel += s.delivery || 0;
+        } else {
+          const k = nombre.toUpperCase().trim();
+          ventSalon += s.total || 0;
+          pax       += s.pax   || 0;
+          iCom      += s.iCom  || 0;
+          iBeb      += s.iBeb  || 0;
+          if (!salMap[k]) salMap[k] = { total:0, pax:0, dias:0 };
+          salMap[k].total += s.total || 0;
+          salMap[k].pax   += s.pax   || 0;
+          salMap[k].dias++;
+        }
+      });
     });
-  });
+    ventRest = ventSalon + ventCaj;
+  }
 
-  const avgPool = turnos.length > 0 ? poolTotal / turnos.length : 0;
-  const avgAM   = amCount > 0 ? amPool / amCount : 0;
-  const avgPM   = pmCount > 0 ? pmPool / pmCount : 0;
-  const top5    = Object.entries(empMap)
-    .map(([n, d]) => ({ nombre: n, ...d }))
-    .sort((a, b) => b.take - a.take)
-    .slice(0, 5);
+  const topSal = Object.entries(salMap)
+    .map(([n,d])=>({nombre:n,...d,prom:d.pax>0?d.total/d.pax:0}))
+    .sort((a,b)=>b.total-a.total).slice(0,5);
 
-  const fmt = v => '₡ ' + Math.round(v).toLocaleString('es-CR');
-  const row = (label, val, bold) =>
-    `<tr><td style="padding:6px 0;color:#666;font-size:13px">${label}</td>
-         <td style="padding:6px 0;font-size:13px${bold?';font-weight:bold;color:#c8a96e':''}">${val}</td></tr>`;
+  // ── 2. PROPINAS (propinas_turnos) ─────────────────────────────
+  let propPool=0, propBarra=0, propTurnos=0;
+  let amCount=0, pmCount=0, amPool=0, pmPool=0;
+  const propEmpMap = {};
+
+  const wsTurnos = ss.getSheetByName(SHEET_PROP_TURNOS);
+  if (wsTurnos && wsTurnos.getLastRow() > 1) {
+    wsTurnos.getRange(2, 1, wsTurnos.getLastRow()-1, 6).getValues().forEach(r => {
+      if (!String(r[1]).startsWith(prefix)) return;
+      let d; try { d = JSON.parse(r[4]); } catch(e) { return; }
+      propTurnos++;
+      propPool  += d.pool_total || 0;
+      propBarra += d.pool_barra || 0;
+      const isAM = (d.turno||'PM') === 'AM';
+      if (isAM) { amCount++; amPool += d.pool_total||0; }
+      else       { pmCount++; pmPool += d.pool_total||0; }
+      (d.lineas||[]).forEach(l => {
+        if (!l.nombre) return;
+        if (!propEmpMap[l.nombre]) propEmpMap[l.nombre] = { take:0, dias:0, rol:l.rol||'' };
+        propEmpMap[l.nombre].take += l.take_home || 0;
+        propEmpMap[l.nombre].dias++;
+      });
+    });
+  }
+
+  if (diasVentas === 0 && propTurnos === 0) return; // Sin datos
+
+  const topProp = Object.entries(propEmpMap)
+    .map(([n,d])=>({nombre:n,...d}))
+    .sort((a,b)=>b.take-a.take).slice(0,5);
+
+  // ── 3. Armar HTML ─────────────────────────────────────────────
+  const thStyle = 'padding:8px 10px;text-align:left;color:#888;font-size:11px;font-weight:normal;border-bottom:1px solid #ddd';
+  const tdStyle = 'padding:8px 10px;border-bottom:1px solid #f0ece8;font-size:12px';
 
   const htmlBody = `
-<div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-  <h2 style="color:#2a4a6b;border-bottom:2px solid #e8e3db;padding-bottom:8px">
-    📊 Propinas ${mesNombre} ${anio}
-  </h2>
-  <h3 style="color:#555;font-size:14px;margin-top:20px">Resumen del mes</h3>
-  <table style="width:100%;border-collapse:collapse">
-    ${row('Turnos registrados', `${turnos.length} (${amCount} AM · ${pmCount} PM)`)}
-    ${row('Pool total generado', fmt(poolTotal), true)}
-    ${poolBarra > 0 ? row('Pool barra', fmt(poolBarra)) : ''}
-    ${row('Promedio por turno', fmt(avgPool))}
-    ${amCount > 0 ? row('Promedio turno AM', fmt(avgAM)) : ''}
-    ${pmCount > 0 ? row('Promedio turno PM', fmt(avgPM)) : ''}
-  </table>
-  <h3 style="color:#555;font-size:14px;margin-top:24px">Top 5 empleados</h3>
-  <table style="width:100%;border-collapse:collapse;font-size:12px">
-    <tr style="background:#f5f0e8">
-      <th style="padding:8px;text-align:left;color:#666">#</th>
-      <th style="padding:8px;text-align:left;color:#666">Empleado</th>
-      <th style="padding:8px;text-align:left;color:#666">Rol</th>
-      <th style="padding:8px;text-align:center;color:#666">Días</th>
-      <th style="padding:8px;text-align:right;color:#666">Take Home</th>
-    </tr>
-    ${top5.map((e, i) =>
-      `<tr style="border-bottom:1px solid #eee">
-        <td style="padding:8px;color:#999">${i+1}</td>
-        <td style="padding:8px;font-weight:bold">${e.nombre}</td>
-        <td style="padding:8px;color:#666">${e.rol}</td>
-        <td style="padding:8px;text-align:center;color:#666">${e.dias}</td>
-        <td style="padding:8px;text-align:right;color:#c8a96e;font-weight:bold">${fmt(e.take)}</td>
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#fafaf8;padding:0">
+
+  <!-- Header -->
+  <div style="background:#0d0d0d;padding:20px 28px">
+    <div style="font-family:Georgia,serif;font-size:20px;color:#c8a96e;letter-spacing:.08em">SATORI</div>
+    <div style="font-size:11px;color:#555;letter-spacing:.2em;text-transform:uppercase;margin-top:2px">Reporte mensual · ${mesNombre} ${anio}</div>
+  </div>
+
+  <!-- VENTAS -->
+  ${diasVentas > 0 ? `
+  <div style="padding:24px 28px">
+    <h2 style="font-size:15px;color:#2a4a6b;margin:0 0 16px;border-bottom:1px solid #e0dbd2;padding-bottom:8px">📈 Ventas · ${mesNombre} ${anio}</h2>
+    <table style="width:100%;border-collapse:collapse">
+      ${ventRest > 0 ? kRow('Ventas totales restaurante', fmt(ventRest), true) : ''}
+      ${kRow('Ventas salón (saloneros)', fmt(ventSalon))}
+      ${ventCaj > 0 ? kRow('Cajeros / Delivery', fmt(ventCaj)) : ''}
+      ${ventDel > 0 ? kRow('Solo delivery', fmt(ventDel)) : ''}
+      ${kRow('Días con registro', diasVentas + ' días')}
+      ${pax > 0 ? kRow('PAX total', pax.toLocaleString('es-CR') + ' personas') : ''}
+      ${pax > 0 && ventSalon > 0 ? kRow('Ticket promedio / PAX', fmt(ventSalon/pax)) : ''}
+    </table>
+    ${topSal.length > 0 ? `
+    <h3 style="font-size:13px;color:#444;margin:20px 0 8px">Top saloneros por ventas</h3>
+    <table style="width:100%;border-collapse:collapse">
+      <tr><th style="${thStyle}">#</th><th style="${thStyle}">Salonero</th><th style="${thStyle};text-align:center">Días</th><th style="${thStyle};text-align:right">Ventas</th><th style="${thStyle};text-align:right">Ticket prom.</th></tr>
+      ${topSal.map((s,i)=>`<tr>
+        <td style="${tdStyle};color:#bbb">${i+1}</td>
+        <td style="${tdStyle};font-weight:bold">${s.nombre}</td>
+        <td style="${tdStyle};text-align:center;color:#888">${s.dias}</td>
+        <td style="${tdStyle};text-align:right;font-weight:bold;color:#2a4a6b">${fmt(s.total)}</td>
+        <td style="${tdStyle};text-align:right;color:#666">${s.prom>0?fmt(s.prom):'—'}</td>
       </tr>`).join('')}
-  </table>
-  <p style="font-size:11px;color:#aaa;margin-top:24px;border-top:1px solid #eee;padding-top:8px">
-    Generado automáticamente por Satori Backend · ${mesNombre} ${anio}
-  </p>
+    </table>` : ''}
+  </div>` : ''}
+
+  <!-- PROPINAS -->
+  ${propTurnos > 0 ? `
+  <div style="padding:24px 28px;background:#fff;border-top:1px solid #e8e3db">
+    <h2 style="font-size:15px;color:#2a7a6a;margin:0 0 16px;border-bottom:1px solid #e0dbd2;padding-bottom:8px">💰 Propinas · ${mesNombre} ${anio}</h2>
+    <table style="width:100%;border-collapse:collapse">
+      ${kRow('Turnos registrados', `${propTurnos} (${amCount} AM · ${pmCount} PM)`)}
+      ${kRow('Pool total distribuido', fmt(propPool), true)}
+      ${propBarra > 0 ? kRow('Pool barra', fmt(propBarra)) : ''}
+      ${kRow('Promedio por turno', fmt(propTurnos>0?propPool/propTurnos:0))}
+      ${amCount > 0 ? kRow('Promedio turno AM', fmt(amPool/amCount)) : ''}
+      ${pmCount > 0 ? kRow('Promedio turno PM', fmt(pmPool/pmCount)) : ''}
+    </table>
+    ${topProp.length > 0 ? `
+    <h3 style="font-size:13px;color:#444;margin:20px 0 8px">Top empleados por take-home</h3>
+    <table style="width:100%;border-collapse:collapse">
+      <tr><th style="${thStyle}">#</th><th style="${thStyle}">Empleado</th><th style="${thStyle}">Rol</th><th style="${thStyle};text-align:center">Días</th><th style="${thStyle};text-align:right">Take Home</th></tr>
+      ${topProp.map((e,i)=>`<tr>
+        <td style="${tdStyle};color:#bbb">${i+1}</td>
+        <td style="${tdStyle};font-weight:bold">${e.nombre}</td>
+        <td style="${tdStyle};color:#888">${e.rol}</td>
+        <td style="${tdStyle};text-align:center;color:#888">${e.dias}</td>
+        <td style="${tdStyle};text-align:right;font-weight:bold;color:#c8a96e">${fmt(e.take)}</td>
+      </tr>`).join('')}
+    </table>` : ''}
+  </div>` : ''}
+
+  <!-- Footer -->
+  <div style="padding:14px 28px;background:#f0ece4;border-top:1px solid #e0dbd2">
+    <p style="font-size:10px;color:#aaa;margin:0">Generado automáticamente por Satori · ${mesNombre} ${anio}</p>
+  </div>
+
 </div>`;
 
-  const recipient = 'satorisushibar@gmail.com';
-
   GmailApp.sendEmail(
-    recipient,
-    `📊 Propinas ${mesNombre} ${anio} — Resumen mensual`,
-    `Propinas ${mesNombre} ${anio}. Pool total: ${fmt(poolTotal)}. Turnos: ${turnos.length}. Promedio/turno: ${fmt(avgPool)}.`,
+    'satorisushibar@gmail.com',
+    `📊 Satori — Reporte ${mesNombre} ${anio}`,
+    `Reporte ${mesNombre} ${anio}. Ventas: ${fmt(ventRest||ventSalon)}. Pool propinas: ${fmt(propPool)}.`,
     { htmlBody }
   );
 }
