@@ -75,6 +75,7 @@ function doGet(e) {
     else if (action === 'getEmpleadosPropinas') result = getEmpleados();
     else if (action === 'getRolesPropinas')     result = getRolesPropinas();
     else if (action === 'getTurnosPropinas')    result = getTurnosPropinas(params);
+    else if (action === 'setupReporteMensual')  result = setupReporteMensual();
 
     output.setContent(JSON.stringify(result));
   } catch(err) {
@@ -1094,6 +1095,132 @@ function deleteTurnoPropinas(id) {
     }
   }
   return { ok: false, error: 'Not found' };
+}
+
+// ══════════════════════════════════════════════════════════════
+// REPORTE MENSUAL DE PROPINAS
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Configurar trigger mensual (ejecutar una sola vez desde el editor de Apps Script,
+ * o llamar vía GET: ?action=setupReporteMensual&secret=satori2026)
+ */
+function setupReporteMensual() {
+  // Eliminar triggers duplicados
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'reporteMensualPropinas') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('reporteMensualPropinas')
+    .timeBased().onMonthDay(1).atHour(8).inTimezone('America/Costa_Rica').create();
+  return { ok: true, msg: 'Trigger mensual creado. Se ejecutará el 1° de cada mes a las 8am (CR).' };
+}
+
+/**
+ * Genera y envía el reporte mensual de propinas por email.
+ * Se ejecuta automáticamente el 1° de cada mes via trigger.
+ */
+function reporteMensualPropinas() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ws = ss.getSheetByName(SHEET_PROP_TURNOS);
+  if (!ws || ws.getLastRow() < 2) return;
+
+  // Mes anterior (el reporte se genera el 1° → reporta el mes que terminó)
+  const hoy     = new Date();
+  const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const prefix  = Utilities.formatDate(mesPrev, 'America/Costa_Rica', 'yyyy-MM');
+  const MESES_N = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                   'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+  const mesNombre = MESES_N[mesPrev.getMonth()];
+  const anio      = mesPrev.getFullYear();
+
+  // Leer y filtrar turnos del mes anterior
+  const rows   = ws.getRange(2, 1, ws.getLastRow() - 1, 6).getValues();
+  const turnos = rows
+    .filter(r => String(r[1]).startsWith(prefix))
+    .map(r => ({ fecha: String(r[1]), datos: tryParse(r[4], {}) }));
+
+  if (!turnos.length) return; // Sin datos, no enviar email vacío
+
+  // Calcular métricas
+  let poolTotal = 0, poolBarra = 0;
+  let amCount = 0, pmCount = 0, amPool = 0, pmPool = 0;
+  const empMap = {};
+
+  turnos.forEach(t => {
+    const pool  = t.datos.pool_total || 0;
+    const barra = t.datos.pool_barra || 0;
+    poolTotal += pool;
+    poolBarra += barra;
+    const isAM = (t.datos.turno || 'PM') === 'AM';
+    if (isAM) { amCount++; amPool += pool; }
+    else       { pmCount++; pmPool += pool; }
+    (t.datos.lineas || []).forEach(l => {
+      if (!l.nombre) return;
+      if (!empMap[l.nombre]) empMap[l.nombre] = { take: 0, dias: 0, rol: l.rol || '' };
+      empMap[l.nombre].take += l.take_home || 0;
+      empMap[l.nombre].dias++;
+    });
+  });
+
+  const avgPool = turnos.length > 0 ? poolTotal / turnos.length : 0;
+  const avgAM   = amCount > 0 ? amPool / amCount : 0;
+  const avgPM   = pmCount > 0 ? pmPool / pmCount : 0;
+  const top5    = Object.entries(empMap)
+    .map(([n, d]) => ({ nombre: n, ...d }))
+    .sort((a, b) => b.take - a.take)
+    .slice(0, 5);
+
+  const fmt = v => '₡ ' + Math.round(v).toLocaleString('es-CR');
+  const row = (label, val, bold) =>
+    `<tr><td style="padding:6px 0;color:#666;font-size:13px">${label}</td>
+         <td style="padding:6px 0;font-size:13px${bold?';font-weight:bold;color:#c8a96e':''}">${val}</td></tr>`;
+
+  const htmlBody = `
+<div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+  <h2 style="color:#2a4a6b;border-bottom:2px solid #e8e3db;padding-bottom:8px">
+    📊 Propinas ${mesNombre} ${anio}
+  </h2>
+  <h3 style="color:#555;font-size:14px;margin-top:20px">Resumen del mes</h3>
+  <table style="width:100%;border-collapse:collapse">
+    ${row('Turnos registrados', `${turnos.length} (${amCount} AM · ${pmCount} PM)`)}
+    ${row('Pool total generado', fmt(poolTotal), true)}
+    ${poolBarra > 0 ? row('Pool barra', fmt(poolBarra)) : ''}
+    ${row('Promedio por turno', fmt(avgPool))}
+    ${amCount > 0 ? row('Promedio turno AM', fmt(avgAM)) : ''}
+    ${pmCount > 0 ? row('Promedio turno PM', fmt(avgPM)) : ''}
+  </table>
+  <h3 style="color:#555;font-size:14px;margin-top:24px">Top 5 empleados</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <tr style="background:#f5f0e8">
+      <th style="padding:8px;text-align:left;color:#666">#</th>
+      <th style="padding:8px;text-align:left;color:#666">Empleado</th>
+      <th style="padding:8px;text-align:left;color:#666">Rol</th>
+      <th style="padding:8px;text-align:center;color:#666">Días</th>
+      <th style="padding:8px;text-align:right;color:#666">Take Home</th>
+    </tr>
+    ${top5.map((e, i) =>
+      `<tr style="border-bottom:1px solid #eee">
+        <td style="padding:8px;color:#999">${i+1}</td>
+        <td style="padding:8px;font-weight:bold">${e.nombre}</td>
+        <td style="padding:8px;color:#666">${e.rol}</td>
+        <td style="padding:8px;text-align:center;color:#666">${e.dias}</td>
+        <td style="padding:8px;text-align:right;color:#c8a96e;font-weight:bold">${fmt(e.take)}</td>
+      </tr>`).join('')}
+  </table>
+  <p style="font-size:11px;color:#aaa;margin-top:24px;border-top:1px solid #eee;padding-top:8px">
+    Generado automáticamente por Satori Backend · ${mesNombre} ${anio}
+  </p>
+</div>`;
+
+  const recipient = Session.getActiveUser().getEmail();
+  if (!recipient) return;
+
+  GmailApp.sendEmail(
+    recipient,
+    `📊 Propinas ${mesNombre} ${anio} — Resumen mensual`,
+    `Propinas ${mesNombre} ${anio}. Pool total: ${fmt(poolTotal)}. Turnos: ${turnos.length}. Promedio/turno: ${fmt(avgPool)}.`,
+    { htmlBody }
+  );
 }
 
 // ══════════════════════════════════════════════════════════════
