@@ -1212,8 +1212,7 @@ function reporteMensualPropinas() {
   </p>
 </div>`;
 
-  const recipient = Session.getActiveUser().getEmail();
-  if (!recipient) return;
+  const recipient = 'satorisushibar@gmail.com';
 
   GmailApp.sendEmail(
     recipient,
