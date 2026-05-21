@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporte Mensual — Satori</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Shippori+Mincho:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0d0d0d; --paper: #f5f0e8; --gold: #c8a96e; --gold-dim: #c8a96e22;
+    --red: #c23b22; --green: #4a7c59; --border: #d4cfc4; --panel: #ede8de;
+    --muted: #8a8070; --blue: #2a4a6b; --teal: #2a7a6a; --teal-dim: #2a7a6a18;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1610; font-family:'DM Mono',monospace; min-height:100vh; padding:28px 20px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+
+  /* Config bar */
+  .config-bar {
+    max-width:700px; width:100%; background:#0d0d0d;
+    border:1px solid #2a2015; padding:14px 18px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .config-title { font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:#6a5a40; }
+  .config-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .config-row label { font-size:9px; color:#5a4a30; letter-spacing:.1em; }
+  .config-input {
+    background:#1a1a1a; border:1px solid #2a2015; color:var(--gold);
+    font-family:'DM Mono',monospace; font-size:10px;
+    padding:5px 10px; outline:none; flex:1; min-width:200px;
+  }
+  .config-input:focus { border-color: var(--gold); }
+  .config-select {
+    background:#1a1a1a; border:1px solid #2a2015; color:var(--paper);
+    font-family:'DM Mono',monospace; font-size:10px; padding:5px 8px;
+    cursor:pointer;
+  }
+  .btn-load {
+    background:var(--teal); color:#fff; border:none; cursor:pointer;
+    font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.15em;
+    text-transform:uppercase; padding:7px 16px; white-space:nowrap;
+    transition: background .15s;
+  }
+  .btn-load:hover { background:#1a5a4a; }
+  .btn-load:disabled { background:#333; color:#666; cursor:not-allowed; }
+  .status-line { font-size:9px; letter-spacing:.1em; }
+  .status-line.ok   { color:var(--teal); }
+  .status-line.err  { color:var(--red); }
+  .status-line.load { color:var(--gold); }
+
+  /* Email */
+  .email { max-width:700px; width:100%; background:var(--paper); border:1px solid var(--border); box-shadow:0 12px 48px rgba(0,0,0,.5); }
+  .em-header { background:var(--ink); padding:24px 32px 20px; border-bottom:2px solid var(--gold); display:flex; align-items:flex-end; justify-content:space-between; }
+  .em-logo { font-family:'Shippori Mincho',serif; font-size:24px; font-weight:800; color:var(--gold); letter-spacing:.12em; }
+  .em-logo-sub { font-size:8px; letter-spacing:.3em; color:#444; text-transform:uppercase; display:block; margin-top:2px; font-family:'DM Mono',monospace; font-weight:300; }
+  .em-month-chip { font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink); background:var(--gold); padding:4px 10px; font-weight:500; }
+  .em-body { padding:28px 32px; }
+  .sec-title { font-size:8px; letter-spacing:.25em; text-transform:uppercase; color:var(--muted); font-weight:500; padding-bottom:8px; border-bottom:1px solid var(--border); margin:28px 0 14px; display:flex; align-items:center; gap:8px; }
+  .sec-title:first-child { margin-top:0; }
+  .sec-accent { color:var(--teal); }
+  .sec-accent-gold { color:var(--gold); }
+  .kpi-row { display:grid; gap:8px; margin-bottom:10px; }
+  .kpi-row.c4 { grid-template-columns:repeat(4,1fr); }
+  .kpi-row.c3 { grid-template-columns:repeat(3,1fr); }
+  .kpi-row.c2 { grid-template-columns:repeat(2,1fr); }
+  .kpi { background:var(--panel); border:1px solid var(--border); padding:12px 14px; text-align:center; }
+  .kpi-val { font-size:16px; font-weight:500; color:var(--ink); line-height:1.2; }
+  .kpi-val.teal { color:var(--teal); } .kpi-val.gold { color:var(--gold); } .kpi-val.blue { color:var(--blue); }
+  .kpi-lbl { font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
+  .em-table { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:4px; }
+  .em-table thead tr { background:var(--ink); }
+  .em-table thead th { padding:7px 10px; text-align:left; font-size:7px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color:#555; }
+  .em-table thead th.r { text-align:right; } .em-table thead th.c { text-align:center; }
+  .em-table tbody tr { border-bottom:1px solid var(--border); }
+  .em-table tbody tr:last-child { border-bottom:none; }
+  .em-table tbody tr:hover { background:var(--panel); }
+  .em-table tbody td { padding:8px 10px; color:#2a2015; vertical-align:middle; }
+  .em-table tbody td.r { text-align:right; } .em-table tbody td.c { text-align:center; }
+  .em-table tbody td.bold { font-weight:500; color:var(--ink); }
+  .em-table tbody td.gold { color:var(--gold); font-weight:500; }
+  .em-table tbody td.teal { color:var(--teal); font-weight:500; }
+  .em-table tbody td.muted { color:var(--muted); font-size:9px; }
+  .rbadge { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; font-size:8px; font-weight:600; border:1px solid var(--border); color:var(--muted); background:var(--panel); margin-right:6px; }
+  .rbadge.r1 { border-color:var(--gold); color:var(--gold); background:var(--gold-dim); }
+  .rbadge.r2 { border-color:#aaa; color:#666; background:#f0ede8; }
+  .rbadge.r3 { border-color:#b87333; color:#8a5a20; background:#f5ede0; }
+  .rol-tag { font-size:7px; letter-spacing:.1em; text-transform:uppercase; padding:2px 6px; font-weight:500; border:1px solid; }
+  .rol-tag.salonero { color:var(--teal); border-color:var(--teal); background:var(--teal-dim); }
+  .rol-tag.barman,.rol-tag.barback { color:var(--blue); border-color:var(--blue); background:#2a4a6b12; }
+  .rol-tag.runner { color:var(--green); border-color:var(--green); background:#4a7c5912; }
+  .rol-tag.cocina { color:var(--gold); border-color:var(--gold); background:var(--gold-dim); }
+  .ibar-row { display:grid; grid-template-columns:88px 1fr 120px; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border); }
+  .ibar-row:last-child { border-bottom:none; }
+  .ibar-lbl { font-size:9px; color:var(--muted); text-align:right; }
+  .ibar-track { background:var(--panel); height:8px; border:1px solid var(--border); }
+  .ibar-fill { height:100%; }
+  .ibar-val { font-size:10px; font-weight:500; color:var(--ink); }
+  .ibar-pct { font-size:8px; color:var(--muted); margin-left:3px; }
+  .ampm-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+  .ampm-box { background:var(--panel); border:1px solid var(--border); padding:14px 16px; position:relative; }
+  .ampm-box::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  .ampm-box.am::before { background:var(--teal); } .ampm-box.pm::before { background:var(--gold); }
+  .ampm-lbl { font-size:8px; letter-spacing:.2em; text-transform:uppercase; margin-bottom:6px; }
+  .ampm-lbl.am { color:var(--teal); } .ampm-lbl.pm { color:var(--gold); }
+  .ampm-val { font-size:26px; font-weight:400; color:var(--ink); line-height:1; }
+  .ampm-sub { font-size:9px; color:var(--muted); margin-top:4px; }
+  .pool-breakdown { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; background:var(--gold-dim); border:1px solid var(--gold); padding:14px 16px; }
+  .pb-item { text-align:center; }
+  .pb-val { font-size:14px; font-weight:500; color:var(--gold); }
+  .pb-lbl { font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:#8a6a30; margin-top:3px; }
+  .sector-row { display:grid; grid-template-columns:74px 1fr 90px 38px; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); }
+  .sector-row:last-child { border-bottom:none; }
+  .sector-lbl { font-size:9px; color:var(--muted); text-align:right; }
+  .sector-track { background:var(--panel); height:9px; border:1px solid var(--border); }
+  .sector-fill { height:100%; }
+  .sector-val { font-size:10px; font-weight:500; color:var(--ink); }
+  .sector-pct { font-size:9px; font-weight:500; color:var(--paper); text-align:center; padding:2px 4px; }
+  .empty-section { background:var(--teal-dim); border:1px solid var(--teal); padding:12px 16px; font-size:10px; color:var(--teal); margin-bottom:14px; }
+  .em-footer { background:var(--ink); padding:18px 32px; text-align:center; border-top:1px solid #1a1a1a; }
+  .em-footer p { font-size:8px; color:#333; letter-spacing:.1em; line-height:2; }
+  .em-footer span { color:#555; }
+  /* Report tabs */
+  .report-tabs { max-width:700px; width:100%; display:flex; gap:0; }
+  .report-tab {
+    flex:1; padding:10px 0; text-align:center; font-size:9px; letter-spacing:.2em;
+    text-transform:uppercase; cursor:pointer; background:#0d0d0d;
+    border:1px solid #2a2015; border-bottom:none; color:#4a3a20;
+    transition:all .15s;
+  }
+  .report-tab:hover { color:var(--gold); }
+  .report-tab.active { color:var(--gold); border-bottom:2px solid var(--gold); }
+  .report-tab.active.propinas { color:var(--teal); border-bottom-color:var(--teal); }
+  /* Bar chart rows inside email */
+  .ibar-row-v { display:grid; grid-template-columns:88px 1fr 120px; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border); }
+  .ibar-row-v:last-child { border-bottom:none; }
+</style>
+</head>
+<body>
+
+<!-- Config bar -->
+<div class="config-bar">
+  <div class="config-title">Preview del reporte mensual — carga datos reales</div>
+  <div class="config-row">
+    <label>Apps Script URL</label>
+    <input class="config-input" id="api-url" type="text"
+      value="https://script.google.com/macros/s/AKfycbz_MPh6TFtM6ToY_2CbbdHvtyKCwGg5uFPzYpw-9vcTtmtXX5BDIpnqE3KJgKtZwFBkeg/exec"
+      placeholder="https://script.google.com/macros/s/...">
+    <label>Mes</label>
+    <select class="config-select" id="sel-mes">
+      <option value="1">Enero</option><option value="2">Febrero</option>
+      <option value="3">Marzo</option><option value="4" selected>Abril</option>
+      <option value="5">Mayo</option><option value="6">Junio</option>
+      <option value="7">Julio</option><option value="8">Agosto</option>
+      <option value="9">Setiembre</option><option value="10">Octubre</option>
+      <option value="11">Noviembre</option><option value="12">Diciembre</option>
+    </select>
+    <select class="config-select" id="sel-anio">
+      <option value="2025">2025</option><option value="2026" selected>2026</option>
+    </select>
+    <button class="btn-load" id="btn-load" onclick="cargarDatos()">⟳ Cargar datos reales</button>
+    <button class="btn-load" id="btn-mock" onclick="cargarMock()" style="background:#3a2a0a;border:1px solid var(--gold);color:var(--gold)">📋 Ver ejemplo</button>
+  </div>
+  <div class="status-line" id="status-line">Cargando datos de ejemplo...</div>
+</div>
+
+<!-- Report tabs -->
+<div class="report-tabs">
+  <div class="report-tab active" id="tab-ventas" onclick="switchTab('ventas')">📈 Ventas</div>
+  <div class="report-tab propinas" id="tab-propinas" onclick="switchTab('propinas')">💰 Propinas</div>
+</div>
+
+<!-- Email -->
+<div class="email" id="email-container">
+  <div class="em-header">
+    <div>
+      <div class="em-logo">SATORI</div>
+      <span class="em-logo-sub" id="em-subtitle">Reporte de Ventas</span>
+    </div>
+    <div class="em-month-chip" id="em-month-chip">Abril 2026</div>
+  </div>
+  <div class="em-body" id="em-body">
+    <div style="padding:40px 0;text-align:center;color:var(--muted);font-size:11px;letter-spacing:.1em">
+      Cargando datos...
+    </div>
+  </div>
+  <div class="em-footer">
+    <p>Generado automáticamente · <span id="em-footer-date">—</span><br>
+    <span>Satori Sushi Bar · Sistema de Gestión</span><br>
+    <span>satorisushibar@gmail.com</span></p>
+  </div>
+</div>
+
+<script>
+const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+const SECTOR_COLORS = { salonero:'var(--teal)', barman:'var(--blue)', cocina:'var(--gold)', runner:'var(--green)', manager:'#5a6050' };
+const SECTOR_LABEL  = { salonero:'Saloneros', barman:'Barra', cocina:'Cocina', runner:'Runners', manager:'Management' };
+let _cachedData = null;
+let _activeTab = 'ventas';
+
+/* ── Datos de ejemplo (Abril 2026 simulado) ── */
+const MOCK_DATA = {
+  ok:true, prefix:'2026-04',
+  ventas:{
+    total:14850000, salon:11200000, caja:2100000, delivery:1550000,
+    pax:1840, diasVentas:26, ticketProm:6087, iCom:1240, iBeb:600,
+    prevVent:13200000,
+    topSal:[
+      { nombre:'Carlos M.',  ventas:2850000, servicios:78, ventaProm:36538, paxTotal:312, paxProm:4.0, ticketProm:9134 },
+      { nombre:'Andrés V.',  ventas:2410000, servicios:71, ventaProm:33944, paxTotal:278, paxProm:3.9, ticketProm:8669 },
+      { nombre:'Sofía R.',   ventas:2180000, servicios:65, ventaProm:33538, paxTotal:255, paxProm:3.9, ticketProm:8549 },
+      { nombre:'Diego L.',   ventas:1950000, servicios:60, ventaProm:32500, paxTotal:235, paxProm:3.9, ticketProm:8298 },
+      { nombre:'Valeria T.', ventas:1820000, servicios:55, ventaProm:33091, paxTotal:221, paxProm:4.0, ticketProm:8235 }
+    ],
+    semanas:[
+      { sem:1, total:2650000, count:6 }, { sem:2, total:3100000, count:7 },
+      { sem:3, total:2980000, count:7 }, { sem:4, total:3420000, count:6 }
+    ],
+    diasSem:[
+      { dia:'lunes',     avg:420000, count:4 }, { dia:'martes',    avg:380000, count:4 },
+      { dia:'miércoles', avg:410000, count:4 }, { dia:'jueves',    avg:540000, count:4 },
+      { dia:'viernes',   avg:680000, count:4 }, { dia:'sábado',    avg:820000, count:4 },
+      { dia:'domingo',   avg:480000, count:2 }
+    ]
+  },
+  propinas:{
+    pool:1260000, barra:180000, turnos:52,
+    amCount:20, pmCount:32, amPool:420000, pmPool:840000,
+    topProp:[
+      { nombre:'Carlos M.', take:148000, dias:22, rol:'salonero', prom:6727,  constancia:92 },
+      { nombre:'Andrés V.', take:132000, dias:20, rol:'salonero', prom:6600,  constancia:84 },
+      { nombre:'Sofía R.',  take:125000, dias:19, rol:'salonero', prom:6579,  constancia:80 },
+      { nombre:'Diego L.',  take:118000, dias:18, rol:'salonero', prom:6556,  constancia:75 },
+      { nombre:'Marco B.',  take:95000,  dias:18, rol:'barman',   prom:5278,  constancia:75 },
+      { nombre:'Laura C.',  take:88000,  dias:16, rol:'runner',   prom:5500,  constancia:67 }
+    ],
+    sectores:[
+      { rol:'salonero', total:875000, pct:69.4 },
+      { rol:'barman',   total:248000, pct:19.7 },
+      { rol:'runner',   total:137000, pct:10.9 }
+    ],
+    semanas:[
+      { sem:1, avg:21500, count:12 }, { sem:2, avg:24800, count:14 },
+      { sem:3, avg:23200, count:14 }, { sem:4, avg:26700, count:12 }
+    ],
+    diasSemana:[
+      { dia:'lunes',     avg:19500, count:8 }, { dia:'martes',    avg:18200, count:8 },
+      { dia:'miércoles', avg:21000, count:8 }, { dia:'jueves',    avg:25800, count:8 },
+      { dia:'viernes',   avg:31200, count:8 }, { dia:'sábado',    avg:38500, count:8 },
+      { dia:'domingo',   avg:23000, count:4 }
+    ]
+  }
+};
+
+function cargarMock() {
+  _cachedData = MOCK_DATA;
+  const mes = parseInt(document.getElementById('sel-mes').value);
+  const anio = parseInt(document.getElementById('sel-anio').value);
+  const stat = document.getElementById('status-line');
+  stat.className = 'status-line';
+  stat.style.color = 'var(--gold)';
+  stat.textContent = '📋 Datos de ejemplo — Redesplegá el Apps Script y presioná "Cargar datos reales" para ver tus datos reales.';
+  document.getElementById('em-month-chip').textContent = `${MESES[mes]} ${anio}`;
+  document.getElementById('em-footer-date').textContent = `1 de ${MESES[mes===12?1:mes+1]}, ${mes===12?anio+1:anio}`;
+  if (_activeTab === 'ventas') renderVentas(MOCK_DATA, mes, anio);
+  else renderPropinas(MOCK_DATA, mes, anio);
+}
+
+function switchTab(tab) {
+  _activeTab = tab;
+  document.getElementById('tab-ventas').className   = 'report-tab'   + (tab==='ventas'   ? ' active' : '');
+  document.getElementById('tab-propinas').className = 'report-tab propinas' + (tab==='propinas' ? ' active' : '');
+  document.getElementById('em-subtitle').textContent = tab==='ventas' ? 'Reporte de Ventas' : 'Reporte de Propinas';
+  if (_cachedData) {
+    const mes  = parseInt(document.getElementById('sel-mes').value);
+    const anio = parseInt(document.getElementById('sel-anio').value);
+    if (tab==='ventas')   renderVentas(_cachedData, mes, anio);
+    else                  renderPropinas(_cachedData, mes, anio);
+  }
+}
+const DIA_ORDER = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+
+function fi(v)  { return '₡ ' + Math.round(v).toLocaleString('es-CR'); }
+function fiS(v) { return v > 0 ? fi(v) : '—'; }
+function pct(v) { return v.toFixed(1) + '%'; }
+
+function rbadge(i) {
+  const cls = i===0?'r1':i===1?'r2':i===2?'r3':'';
+  return `<span class="rbadge ${cls}">${i+1}</span>`;
+}
+
+function rolTag(rol) {
+  return `<span class="rol-tag ${rol}">${rol}</span>`;
+}
+
+function ibarRow(label, val, max, color, suffix='') {
+  const w = max > 0 ? (val / max * 100).toFixed(1) : 0;
+  return `<div class="ibar-row">
+    <div class="ibar-lbl">${label}</div>
+    <div class="ibar-track"><div class="ibar-fill" style="width:${w}%;background:${color}"></div></div>
+    <div class="ibar-val">${fi(val)}<span class="ibar-pct">${suffix}</span></div>
+  </div>`;
+}
+
+async function cargarDatos() {
+  const url  = document.getElementById('api-url').value.trim();
+  const mes  = document.getElementById('sel-mes').value;
+  const anio = document.getElementById('sel-anio').value;
+  const btn  = document.getElementById('btn-load');
+  const stat = document.getElementById('status-line');
+  if (!url) { stat.className='status-line err'; stat.textContent='Ingresá el URL del Apps Script.'; return; }
+  btn.disabled = true;
+  stat.className='status-line load';
+  stat.textContent = 'Conectando con Google Sheets...';
+  try {
+    const res  = await fetch(`${url}?key=satori2026&action=getDatosReporte&mes=${mes}&anio=${anio}`, { redirect:'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Error del servidor');
+    _cachedData = data;
+    stat.className='status-line ok';
+    stat.textContent = `✓ ${MESES[parseInt(mes)]} ${anio} — Ventas: ${data.ventas.diasVentas} días · Propinas: ${data.propinas.turnos} turnos · Pool: ₡${Math.round(data.propinas.pool).toLocaleString('es-CR')}`;
+    const m = parseInt(mes), a = parseInt(anio);
+    document.getElementById('em-month-chip').textContent = `${MESES[m]} ${a}`;
+    document.getElementById('em-footer-date').textContent = `1 de ${MESES[m===12?1:m+1]}, ${m===12?a+1:a}`;
+    if (_activeTab === 'ventas') renderVentas(data, m, a);
+    else renderPropinas(data, m, a);
+  } catch(err) {
+    stat.className='status-line err';
+    stat.textContent = `Error: ${err.message} — Verificá URL y que el script esté redesplegado.`;
+    console.error(err);
+  }
+  btn.disabled = false;
+}
+
+function renderVentas(data, mes, anio) {
+  const v = data.ventas;
+  const p = data.propinas;
+  const mesNombre = MESES[mes];
+  let html = '';
+  html += `<div class="sec-title"><span>📈</span><span class="sec-accent" style="color:var(--blue)">Ventas · ${mesNombre} ${anio}</span>
+    <span style="margin-left:auto;font-size:8px;color:var(--green);border:1px solid var(--green);padding:1px 6px">✓ DATOS REALES</span></div>`;
+  if (v.diasVentas > 0) {
+    const totalCanal = v.salon + v.caja + v.delivery;
+    const iComTot    = (v.iCom||0) + (v.iBeb||0);
+    const delta      = v.prevVent > 0 ? ((v.total - v.prevVent) / v.prevVent * 100).toFixed(1) : null;
+    html += `<div class="kpi-row c4">
+      <div class="kpi"><div class="kpi-val blue">${fiS(v.total)}</div><div class="kpi-lbl">Total Restaurante</div></div>
+      <div class="kpi"><div class="kpi-val">${fiS(v.salon)}</div><div class="kpi-lbl">Salón</div></div>
+      <div class="kpi"><div class="kpi-val">${v.delivery>0?fiS(v.delivery):'—'}</div><div class="kpi-lbl">Delivery</div></div>
+      <div class="kpi"><div class="kpi-val">${v.caja>0?fiS(v.caja):'—'}</div><div class="kpi-lbl">Caja</div></div>
+    </div>
+    <div class="kpi-row c4" style="margin-bottom:12px">
+      <div class="kpi"><div class="kpi-val blue">${v.diasVentas}</div><div class="kpi-lbl">Días</div></div>
+      <div class="kpi"><div class="kpi-val">${v.pax>0?v.pax.toLocaleString('es-CR'):'—'}</div><div class="kpi-lbl">PAX Total</div></div>
+      <div class="kpi"><div class="kpi-val">${v.pax>0?fiS(v.ticketProm):'—'}</div><div class="kpi-lbl">Ticket Prom.</div></div>
+      <div class="kpi"><div class="kpi-val">${fiS(v.total/v.diasVentas)}</div><div class="kpi-lbl">Prom. Diario</div></div>
+    </div>`;
+    if (delta !== null) {
+      const dc = parseFloat(delta)>=0?'var(--green)':'var(--red)';
+      html += `<div style="background:var(--panel);border:1px solid var(--border);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:10px">
+        <span style="color:var(--muted);letter-spacing:.1em">vs mes anterior</span>
+        <span style="color:${dc};font-weight:500;font-size:16px">${parseFloat(delta)>=0?'+':''}${delta}%</span>
+        <span style="color:var(--muted)">(${fiS(v.prevVent)})</span>
+      </div>`;
+    }
+    if (p.pool>0 && v.salon>0) {
+      const efic = (p.pool/v.salon*100).toFixed(1);
+      html += `<div style="background:var(--gold-dim);border:1px solid var(--gold);padding:10px 14px;margin-bottom:14px;font-size:10px;display:flex;gap:10px;align-items:center">
+        <span style="color:var(--muted);letter-spacing:.08em">Eficiencia propina:</span>
+        <span style="color:var(--gold);font-weight:500;font-size:16px">${efic}%</span>
+        <span style="color:var(--muted)">de las ventas de salón se propinó</span>
+      </div>`;
+    }
+    if (totalCanal > 0) {
+      const maxC = Math.max(v.salon, v.delivery||0, v.caja||0);
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏪 Distribución por Canal</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      html += ibarRow('Salón', v.salon, maxC, 'var(--blue)', (v.salon/totalCanal*100).toFixed(0)+'%');
+      if (v.delivery>0) html += ibarRow('Delivery', v.delivery, maxC, 'var(--green)', (v.delivery/totalCanal*100).toFixed(0)+'%');
+      if (v.caja>0)     html += ibarRow('Caja', v.caja, maxC, 'var(--gold)', (v.caja/totalCanal*100).toFixed(0)+'%');
+      html += `</div>`;
+    }
+    if (iComTot > 0) {
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🍣 Mix Comida / Bebidas</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      html += ibarRow('Comida', v.iCom||0, iComTot, 'var(--gold)', ((v.iCom||0)/iComTot*100).toFixed(0)+'%');
+      html += ibarRow('Bebidas', v.iBeb||0, iComTot, 'var(--teal)', ((v.iBeb||0)/iComTot*100).toFixed(0)+'%');
+      html += `</div>`;
+    }
+    if (v.semanas && v.semanas.length > 0) {
+      const maxS = Math.max(...v.semanas.map(s=>s.total));
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📈 Tendencia Semanal de Ventas</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      v.semanas.forEach((s,i) => { html += ibarRow('Semana '+(i+1), s.total, maxS, 'var(--blue)', ''); });
+      html += `</div>`;
+    }
+    if (v.diasSem && v.diasSem.length > 0) {
+      const maxD = v.diasSem[0].avg;
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📅 Promedio por Día de Semana</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      v.diasSem.forEach(d => { html += ibarRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1), d.avg, maxD, 'var(--gold)', '×'+d.count); });
+      html += `</div>`;
+    }
+    if (v.topSal && v.topSal.length > 0) {
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏆 Top Saloneros</div>
+      <table class="em-table" style="margin-bottom:4px">
+        <thead><tr><th>#</th><th>Empleado</th><th class="r">Ventas</th><th class="c">Servicios</th><th class="r">V. prom.</th><th class="c">Pax tot.</th><th class="c">Pax/serv.</th><th class="r">Ticket p.</th></tr></thead><tbody>`;
+      v.topSal.forEach((s,i) => {
+        html += `<tr><td>${rbadge(i)}</td><td class="bold">${s.nombre}</td><td class="r" style="color:var(--blue)">${fiS(s.ventas)}</td><td class="c">${s.servicios}</td><td class="r">${fiS(s.ventaProm)}</td><td class="c">${s.paxTotal||'—'}</td><td class="c">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td class="r muted">${fiS(s.ticketProm)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+  } else {
+    html += `<div class="empty-section">Sin datos de ventas para ${mesNombre} ${anio}.</div>`;
+  }
+  document.getElementById('em-body').innerHTML = html;
+}
+
+function renderPropinas(data, mes, anio) {
+  const p = data.propinas;
+  const mesNombre = MESES[mes];
+  let html = '';
+  html += `<div class="sec-title"><span>💰</span><span class="sec-accent-gold">Propinas · ${mesNombre} ${anio}</span>
+    <span style="margin-left:auto;font-size:8px;color:var(--green);border:1px solid var(--green);padding:1px 6px">✓ DATOS REALES</span></div>`;
+  if (p.turnos > 0) {
+    html += `<div class="kpi-row c3">
+      <div class="kpi"><div class="kpi-val gold">${fi(p.pool)}</div><div class="kpi-lbl">Pool Total</div></div>
+      <div class="kpi"><div class="kpi-val">${fi(p.turnos>0?p.pool/p.turnos:0)}</div><div class="kpi-lbl">Promedio / Turno</div></div>
+      <div class="kpi"><div class="kpi-val blue">${p.turnos}</div><div class="kpi-lbl">Turnos</div></div>
+    </div>`;
+    if (p.barra > 0) {
+      html += `<div class="pool-breakdown">
+        <div class="pb-item"><div class="pb-val">${fi(p.pool-p.barra)}</div><div class="pb-lbl">Pool General · Sala + Efectivo</div></div>
+        <div class="pb-item"><div class="pb-val">${fi(p.barra)}</div><div class="pb-lbl">🍸 Pool Barra · ${(p.barra/p.pool*100).toFixed(0)}%</div></div>
+      </div>`;
+    }
+    html += `<div class="ampm-grid">
+      <div class="ampm-box am"><div class="ampm-lbl am">☀ AM</div>
+        <div class="ampm-val">${p.amCount}</div>
+        <div class="ampm-sub">${p.amCount>0?'prom. '+fi(p.amPool/p.amCount):'sin turnos AM'}</div></div>
+      <div class="ampm-box pm"><div class="ampm-lbl pm">☾ PM</div>
+        <div class="ampm-val">${p.pmCount}</div>
+        <div class="ampm-sub">${p.pmCount>0?'prom. '+fi(p.pmPool/p.pmCount)+'/turno':'sin turnos PM'}</div></div>
+    </div>`;
+    if (p.semanas && p.semanas.length > 0) {
+      const maxS = Math.max(...p.semanas.map(s=>s.avg));
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📈 Tendencia Semanal · Pool Promedio</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      p.semanas.forEach((s,i) => { html += ibarRow('Sem. '+(i+1), s.avg, maxS, 'var(--teal)', '×'+s.count); });
+      html += `</div>`;
+    }
+    if (p.diasSemana && p.diasSemana.length > 0) {
+      const sorted = [...p.diasSemana].sort((a,b)=>b.avg-a.avg);
+      const maxD = sorted[0].avg;
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📅 Pool Promedio por Día</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
+      sorted.forEach(d => { html += ibarRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1), d.avg, maxD, 'var(--gold)', '×'+d.count); });
+      html += `</div>`;
+    }
+    if (p.topProp && p.topProp.length > 0) {
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏆 Top Empleados por Take-Home</div>
+      <table class="em-table" style="margin-bottom:14px">
+        <thead><tr><th>#</th><th>Empleado</th><th>Rol</th><th class="c">Turnos</th><th class="r">Take-Home</th><th class="r">Prom/turno</th><th class="c">Constancia</th></tr></thead><tbody>`;
+      p.topProp.forEach((e,i) => {
+        const cc = e.constancia>=80?'var(--green)':e.constancia>=50?'var(--gold)':'var(--muted)';
+        html += `<tr><td>${rbadge(i)}</td><td class="bold">${e.nombre}</td><td>${rolTag(e.rol)}</td><td class="c">${e.dias}</td><td class="r gold">${fi(e.take)}</td><td class="r">${fi(e.prom)}</td><td class="c" style="color:${cc}">${e.constancia}%</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+    if (p.sectores && p.sectores.length > 0) {
+      const maxSec = p.sectores[0].total;
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🍽️ Distribución por Sector</div>
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:4px">`;
+      p.sectores.forEach(s => {
+        const color = SECTOR_COLORS[s.rol] || 'var(--muted)';
+        const label = SECTOR_LABEL[s.rol]  || s.rol;
+        const w = maxSec>0?(s.total/maxSec*100).toFixed(1):0;
+        html += `<div class="sector-row"><div class="sector-lbl">${label}</div><div class="sector-track"><div class="sector-fill" style="width:${w}%;background:${color}"></div></div><div class="sector-val">${fi(s.total)}</div><div class="sector-pct" style="background:${color}">${s.pct.toFixed(1)}%</div></div>`;
+      });
+      html += `</div>`;
+    }
+  } else {
+    html += `<div class="empty-section">Sin turnos de propinas para ${mesNombre} ${anio}.</div>`;
+  }
+  document.getElementById('em-body').innerHTML = html;
+}
+
+// Auto-cargar al abrir: mock por defecto, reales si el script está desplegado
+window.addEventListener('load', () => cargarMock());
+</script>
+</body>
+</html>

@@ -791,12 +791,12 @@ header {
             <span class="admin-card-title">Email a satorisushibar@gmail.com</span>
           </div>
           <div style="padding:14px 16px 10px;font-size:10px;color:var(--muted);line-height:1.7">
-            <strong style="color:var(--ink);display:block;margin-bottom:6px">Probar el reporte</strong>
-            Enviá el reporte del mes anterior ahora para verificar que funciona.
+            <strong style="color:var(--ink);display:block;margin-bottom:6px">Enviar reporte ahora</strong>
+            Enviá el reporte de propinas en el momento — útil para quincenales o para probar.
           </div>
           <div style="padding:0 16px 14px">
-            <button class="btn btn-teal btn-sm" onclick="enviarReporteAhora()" style="width:100%">
-              📧 Enviar reporte ahora
+            <button class="btn btn-teal btn-sm" onclick="enviarReporteAhora('propinas')" style="width:100%">
+              💰 Enviar reporte de propinas
             </button>
             <div id="reporte-status" style="font-size:9px;color:var(--muted);margin-top:8px;text-align:center;min-height:14px"></div>
           </div>
@@ -2750,19 +2750,28 @@ function toggleMiMes(safeKey) {
 }
 
 // ── Enviar reporte mensual ahora ─────────────────────────────
-async function enviarReporteAhora() {
+async function enviarReporteAhora(tipo = 'ambos') {
   const statusEl = document.getElementById('reporte-status');
-  if (statusEl) statusEl.textContent = 'Enviando...';
+  const acciones = {
+    ventas:  'enviarReporteVentas',
+    propinas:'enviarReportePropinas',
+    ambos:   'enviarReporteMensual'
+  };
+  const labels = {
+    ventas:'Reporte de ventas enviado', propinas:'Reporte de propinas enviado', ambos:'Ambos reportes enviados'
+  };
+  const action = acciones[tipo] || 'enviarReporteMensual';
+  if (statusEl) { statusEl.style.color='var(--gold)'; statusEl.textContent = 'Enviando...'; }
   try {
-    const res = await apiFetch({ action: 'enviarReporteMensual' });
+    const res = await apiFetch({ action });
     if (res.ok) {
-      if (statusEl) statusEl.textContent = '✅ ' + (res.msg || 'Reporte enviado.');
-      toast('Reporte enviado a satorisushibar@gmail.com', 'success');
+      if (statusEl) { statusEl.style.color='var(--teal)'; statusEl.textContent = '✅ ' + (res.msg || labels[tipo]); }
+      toast((res.msg || labels[tipo]) + ' a satorisushibar@gmail.com', 'success');
     } else {
       throw new Error(res.error || 'Error desconocido');
     }
   } catch(e) {
-    if (statusEl) statusEl.textContent = '⚠ ' + e.message;
+    if (statusEl) { statusEl.style.color='var(--red)'; statusEl.textContent = '⚠ ' + e.message; }
     toast('Error: ' + e.message, 'error');
   }
 }

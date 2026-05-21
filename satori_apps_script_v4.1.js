@@ -75,7 +75,10 @@ function doGet(e) {
     else if (action === 'getEmpleadosPropinas') result = getEmpleados();
     else if (action === 'getRolesPropinas')     result = getRolesPropinas();
     else if (action === 'getTurnosPropinas')    result = getTurnosPropinas(params);
-    else if (action === 'enviarReporteMensual') result = enviarReporteMensualAhora();
+    else if (action === 'enviarReporteMensual')  result = enviarReporteMensualAhora();
+    else if (action === 'enviarReporteVentas')   result = enviarReporteVentasAhora();
+    else if (action === 'enviarReportePropinas') result = enviarReportePropinasAhora();
+    else if (action === 'getDatosReporte')       result = getDatosReporte(params);
 
     output.setContent(JSON.stringify(result));
   } catch(err) {
@@ -1102,16 +1105,174 @@ function deleteTurnoPropinas(id) {
 // ══════════════════════════════════════════════════════════════
 
 /**
- * Envía el reporte del mes anterior inmediatamente (llamable desde la app vía GET).
- * No usa ScriptApp — funciona desde el Web App sin permisos especiales.
+ * Devuelve los datos del reporte como JSON sin enviar email.
+ * Acepta ?mes=4&anio=2026 (opcionales, por defecto mes anterior).
+ * Usado por el preview del reporte y por herramientas externas.
  */
+function getDatosReporte(params) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = Session.getScriptTimeZone();
+
+  let prefix;
+  if (params && params.mes && params.anio) {
+    prefix = `${params.anio}-${String(params.mes).padStart(2,'0')}`;
+  } else {
+    const hoy     = new Date();
+    const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    prefix = Utilities.formatDate(mesPrev, tz, 'yyyy-MM');
+  }
+
+  // ── Ventas ────────────────────────────────────────────────────
+  let ventSalon=0, ventCaj=0, ventDel=0, pax=0, diasVentas=0;
+  const salMap = {};
+
+  const wsDias = ss.getSheetByName(SHEET_NAME_DIAS);
+  if (wsDias && wsDias.getLastRow() > 1) {
+    wsDias.getRange(2, 1, wsDias.getLastRow()-1, 3).getValues().forEach(r => {
+      const fecha = r[0] instanceof Date
+        ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]);
+      if (!fecha.startsWith(prefix)) return;
+      let day; try { day = JSON.parse(r[2]); } catch(e) { return; }
+      if (!day || !day.saloneros) return;
+      diasVentas++;
+      Object.entries(day.saloneros).forEach(([nombre, s]) => {
+        if (s.esCajero) {
+          ventCaj += s.total    || 0;
+          ventDel += s.delivery || 0;
+        } else {
+          const k = nombre.toUpperCase().trim();
+          ventSalon += s.total || 0;
+          pax       += s.pax   || 0;
+          if (!salMap[k]) salMap[k] = { total:0, pax:0, servicios:0 };
+          salMap[k].total     += s.total || 0;
+          salMap[k].pax       += s.pax   || 0;
+          salMap[k].servicios++;
+        }
+      });
+    });
+  }
+
+  const topSal = Object.entries(salMap)
+    .map(([nombre, d]) => ({
+      nombre,
+      ventas:    d.total,
+      servicios: d.servicios,
+      ventaProm: d.servicios > 0 ? d.total / d.servicios : 0,
+      paxTotal:  d.pax,
+      paxProm:   d.servicios > 0 ? d.pax   / d.servicios : 0,
+      ticketProm:d.pax > 0       ? d.total / d.pax       : 0
+    }))
+    .sort((a, b) => b.ventas - a.ventas)
+    .slice(0, 5);
+
+  // ── Propinas ──────────────────────────────────────────────────
+  let propPool=0, propBarra=0, propTurnos=0;
+  let amCount=0, pmCount=0, amPool=0, pmPool=0;
+  const propEmpMap = {};
+  const diaMap     = {};
+  const semMap     = {};
+
+  const wsTurnos = ss.getSheetByName(SHEET_PROP_TURNOS);
+  if (wsTurnos && wsTurnos.getLastRow() > 1) {
+    wsTurnos.getRange(2, 1, wsTurnos.getLastRow()-1, 6).getValues().forEach(r => {
+      const fechaStr = r[1] instanceof Date
+        ? Utilities.formatDate(r[1], tz, 'yyyy-MM-dd') : String(r[1]);
+      if (!fechaStr.startsWith(prefix)) return;
+      let d; try { d = JSON.parse(r[4]); } catch(e) { return; }
+      propTurnos++;
+      propPool  += d.pool_total || 0;
+      propBarra += d.pool_barra || 0;
+      const isAM = (d.turno||'PM') === 'AM';
+      if (isAM) { amCount++; amPool += d.pool_total||0; }
+      else       { pmCount++; pmPool += d.pool_total||0; }
+
+      const dia = String(r[2]);
+      if (!diaMap[dia]) diaMap[dia] = [];
+      diaMap[dia].push(d.pool_total || 0);
+
+      const sem = String(r[3]);
+      if (!semMap[sem]) semMap[sem] = [];
+      semMap[sem].push(d.pool_total || 0);
+
+      (d.lineas||[]).forEach(l => {
+        if (!l.nombre) return;
+        if (!propEmpMap[l.nombre]) propEmpMap[l.nombre] = { take:0, dias:0, rol:l.rol||'' };
+        propEmpMap[l.nombre].take += l.take_home || 0;
+        propEmpMap[l.nombre].dias++;
+      });
+    });
+  }
+
+  const topProp = Object.entries(propEmpMap)
+    .map(([nombre, d]) => ({ nombre, ...d, prom: d.dias > 0 ? d.take / d.dias : 0 }))
+    .sort((a, b) => b.take - a.take)
+    .slice(0, 8);
+
+  // Sectores — agrupar barman+barback como 'barra'
+  const sectBrutos = {};
+  Object.values(propEmpMap).forEach(e => {
+    const sec = (e.rol === 'barback') ? 'barman' : e.rol;
+    sectBrutos[sec] = (sectBrutos[sec]||0) + e.take;
+  });
+  const sectores = Object.entries(sectBrutos)
+    .map(([rol, total]) => ({ rol, total, pct: propPool > 0 ? total/propPool*100 : 0 }))
+    .sort((a, b) => b.total - a.total);
+
+  // Día de semana con promedio
+  const diasSemana = Object.entries(diaMap).map(([dia, vals]) => ({
+    dia, count: vals.length,
+    total: vals.reduce((s,v)=>s+v,0),
+    avg:   vals.reduce((s,v)=>s+v,0) / vals.length
+  }));
+
+  // Tendencia semanal
+  const semanas = Object.entries(semMap).sort().map(([sem, vals]) => ({
+    sem, count: vals.length,
+    total: vals.reduce((s,v)=>s+v,0),
+    avg:   vals.reduce((s,v)=>s+v,0) / vals.length
+  }));
+
+  return {
+    ok: true, prefix,
+    ventas: {
+      total:    ventSalon + ventCaj,
+      salon:    ventSalon,
+      caja:     ventCaj,
+      delivery: ventDel,
+      pax, diasVentas,
+      ticketProm: pax > 0 ? ventSalon / pax : 0,
+      topSal
+    },
+    propinas: {
+      pool:    propPool,
+      barra:   propBarra,
+      turnos:  propTurnos,
+      amCount, pmCount, amPool, pmPool,
+      topProp, sectores, diasSemana, semanas
+    }
+  };
+}
+
 function enviarReporteMensualAhora() {
   try {
-    reporteMensualCompleto();
-    return { ok: true, msg: 'Reporte enviado a satorisushibar@gmail.com' };
-  } catch(e) {
-    return { ok: false, error: e.toString() };
-  }
+    reporteVentasMensual();
+    reportePropinaMensual();
+    return { ok: true, msg: 'Reportes de ventas y propinas enviados a satorisushibar@gmail.com' };
+  } catch(e) { return { ok: false, error: e.toString() }; }
+}
+
+function enviarReporteVentasAhora() {
+  try {
+    reporteVentasMensual();
+    return { ok: true, msg: 'Reporte de ventas enviado a satorisushibar@gmail.com' };
+  } catch(e) { return { ok: false, error: e.toString() }; }
+}
+
+function enviarReportePropinasAhora() {
+  try {
+    reportePropinaMensual();
+    return { ok: true, msg: 'Reporte de propinas enviado a satorisushibar@gmail.com' };
+  } catch(e) { return { ok: false, error: e.toString() }; }
 }
 
 /**
@@ -1135,10 +1296,274 @@ function setupReporteMensual() {
 }
 
 /**
- * Reporte combinado de Ventas + Propinas.
- * Se ejecuta automáticamente el 1° de cada mes via trigger.
+ * Llama ambos reportes separados. Se ejecuta el 1° de cada mes via trigger.
  */
 function reporteMensualCompleto() {
+  reporteVentasMensual();
+  reportePropinaMensual();
+}
+
+// ── Helpers compartidos ──────────────────────────────────────────
+function _prefixMesAnterior() {
+  const tz  = Session.getScriptTimeZone();
+  const hoy = new Date();
+  const mp  = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  return {
+    prefix: Utilities.formatDate(mp, tz, 'yyyy-MM'),
+    mesNombre: ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'][mp.getMonth()],
+    anio: mp.getFullYear(), tz
+  };
+}
+function _fmt(v)  { return '₡ ' + Math.round(v).toLocaleString('es-CR'); }
+function _fmtS(v) { return v > 0 ? _fmt(v) : '—'; }
+function _kRow(label, val, gold) {
+  return `<tr><td style="padding:7px 0;color:#666;font-size:12px;width:55%">${label}</td>` +
+    `<td style="padding:7px 0;font-size:13px;text-align:right;${gold?'font-weight:700;color:#c8a96e':''}">${val}</td></tr>`;
+}
+const _th = 'padding:8px 10px;text-align:left;color:#999;font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #ddd;background:#f5f0e8';
+const _td = 'padding:8px 10px;border-bottom:1px solid #f0ece8;font-size:12px';
+function _barRow(label, val, max, color, pct) {
+  const w = max > 0 ? Math.round(val/max*100) : 0;
+  return `<tr><td style="padding:5px 0;color:#777;font-size:11px;width:90px;text-align:right;padding-right:10px">${label}</td>` +
+    `<td style="padding:5px 0"><div style="background:#ece8e0;height:10px"><div style="width:${w}%;height:10px;background:${color}"></div></div></td>` +
+    `<td style="padding:5px 0 5px 10px;font-size:11px;font-weight:500;white-space:nowrap">${_fmt(val)}${pct?` <span style="color:#aaa;font-size:10px">${pct}</span>`:''}</td></tr>`;
+}
+function _emailHeader(titulo, mes, anio) {
+  return `<div style="background:#0d0d0d;padding:22px 28px 18px">` +
+    `<div style="font-family:Georgia,serif;font-size:22px;color:#c8a96e;letter-spacing:.08em;font-weight:700">SATORI</div>` +
+    `<div style="font-size:10px;color:#555;letter-spacing:.25em;text-transform:uppercase;margin-top:3px">${titulo} · ${mes} ${anio}</div></div>`;
+}
+function _emailFooter(mes, anio) {
+  return `<div style="padding:12px 28px;background:#f0ece4;border-top:1px solid #e0dbd2">` +
+    `<p style="font-size:10px;color:#aaa;margin:0">Generado automáticamente · Satori Sushi Bar · ${mes} ${anio}</p></div>`;
+}
+
+// ── Calcular ventas del mes ───────────────────────────────────────
+function _calcVentas(prefix, tz) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let ventSalon=0, ventCaj=0, ventDel=0, pax=0, iCom=0, iBeb=0, diasVentas=0;
+  const salMap={}, semMap={}, diaMap={};
+  const wsDias = ss.getSheetByName(SHEET_NAME_DIAS);
+  if (wsDias && wsDias.getLastRow() > 1) {
+    wsDias.getRange(2,1,wsDias.getLastRow()-1,3).getValues().forEach(r => {
+      const fecha = r[0] instanceof Date ? Utilities.formatDate(r[0],tz,'yyyy-MM-dd') : String(r[0]);
+      if (!fecha.startsWith(prefix)) return;
+      let day; try { day = JSON.parse(r[2]); } catch(e) { return; }
+      if (!day || !day.saloneros) return;
+      diasVentas++;
+      const dNum = parseInt(fecha.split('-')[2]);
+      const sem  = dNum<=7?'1':dNum<=14?'2':dNum<=21?'3':dNum<=28?'4':'5';
+      if (!semMap[sem]) semMap[sem] = 0;
+      let dayTotal = 0;
+      Object.entries(day.saloneros).forEach(([nombre, s]) => {
+        if (s.esCajero) { ventCaj+=s.total||0; ventDel+=s.delivery||0; }
+        else {
+          const k = nombre.toUpperCase().trim();
+          ventSalon+=s.total||0; pax+=s.pax||0; iCom+=s.iCom||0; iBeb+=s.iBeb||0;
+          dayTotal+=s.total||0;
+          if (!salMap[k]) salMap[k]={total:0,pax:0,servicios:0};
+          salMap[k].total+=s.total||0; salMap[k].pax+=s.pax||0; salMap[k].servicios++;
+          const dow = new Date(fecha+'T12:00:00').toLocaleDateString('es-CR',{weekday:'long'}).split(',')[0].toLowerCase();
+          if (!diaMap[dow]) diaMap[dow]=[];
+          diaMap[dow].push(s.total||0);
+        }
+      });
+      semMap[sem] += dayTotal;
+    });
+  }
+  // Mes anterior para comparación δ
+  const [y,m] = prefix.split('-').map(Number);
+  const prevPrefix = `${m===1?y-1:y}-${String(m===1?12:m-1).padStart(2,'0')}`;
+  let prevVent = 0;
+  if (wsDias && wsDias.getLastRow()>1) {
+    wsDias.getRange(2,1,wsDias.getLastRow()-1,3).getValues().forEach(r=>{
+      const f = r[0] instanceof Date?Utilities.formatDate(r[0],tz,'yyyy-MM-dd'):String(r[0]);
+      if (!f.startsWith(prevPrefix)) return;
+      let day; try{day=JSON.parse(r[2]);}catch(e){return;}
+      if (!day||!day.saloneros) return;
+      Object.entries(day.saloneros).forEach(([,s])=>{ prevVent+=s.total||0; });
+    });
+  }
+  const topSal = Object.entries(salMap)
+    .map(([nombre,d])=>({nombre,ventas:d.total,servicios:d.servicios,
+      ventaProm:d.servicios>0?d.total/d.servicios:0,paxTotal:d.pax,
+      paxProm:d.servicios>0?d.pax/d.servicios:0,ticketProm:d.pax>0?d.total/d.pax:0}))
+    .sort((a,b)=>b.ventas-a.ventas).slice(0,5);
+  const semanas = Object.entries(semMap).sort().map(([s,t])=>({sem:s,total:t}));
+  const diasSem = Object.entries(diaMap)
+    .map(([d,v])=>({dia:d,avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}))
+    .sort((a,b)=>b.avg-a.avg);
+  return {ventSalon,ventCaj,ventDel,pax,iCom,iBeb,diasVentas,topSal,semanas,diasSem,
+          ventTotal:ventSalon+ventCaj,prevVent};
+}
+
+// ── Calcular propinas del mes ─────────────────────────────────────
+function _calcPropinas(prefix, tz) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let propPool=0,propBarra=0,propTurnos=0,amCount=0,pmCount=0,amPool=0,pmPool=0;
+  const empMap={}, semMap={}, diaMap={};
+  const wsTurnos = ss.getSheetByName(SHEET_PROP_TURNOS);
+  if (wsTurnos && wsTurnos.getLastRow()>1) {
+    wsTurnos.getRange(2,1,wsTurnos.getLastRow()-1,6).getValues().forEach(r=>{
+      const f=r[1] instanceof Date?Utilities.formatDate(r[1],tz,'yyyy-MM-dd'):String(r[1]);
+      if (!f.startsWith(prefix)) return;
+      let d; try{d=JSON.parse(r[4]);}catch(e){return;}
+      propTurnos++; propPool+=d.pool_total||0; propBarra+=d.pool_barra||0;
+      const isAM=(d.turno||'PM')==='AM';
+      if(isAM){amCount++;amPool+=d.pool_total||0;}else{pmCount++;pmPool+=d.pool_total||0;}
+      const sem=String(r[3]);
+      if(!semMap[sem])semMap[sem]=[];
+      semMap[sem].push(d.pool_total||0);
+      const dow=String(r[2]).toLowerCase();
+      if(!diaMap[dow])diaMap[dow]=[];
+      diaMap[dow].push(d.pool_total||0);
+      (d.lineas||[]).forEach(l=>{
+        if(!l.nombre)return;
+        if(!empMap[l.nombre])empMap[l.nombre]={take:0,dias:0,rol:l.rol||''};
+        empMap[l.nombre].take+=l.take_home||0; empMap[l.nombre].dias++;
+      });
+    });
+  }
+  const sectBruto={};
+  Object.values(empMap).forEach(e=>{
+    const sec=e.rol==='barback'?'barman':e.rol;
+    sectBruto[sec]=(sectBruto[sec]||0)+e.take;
+  });
+  const sectores=Object.entries(sectBruto)
+    .map(([rol,t])=>({rol,total:t,pct:propPool>0?t/propPool*100:0}))
+    .sort((a,b)=>b.total-a.total);
+  const topProp=Object.entries(empMap)
+    .map(([n,d])=>({nombre:n,...d,prom:d.dias>0?d.take/d.dias:0,
+                    constancia:propTurnos>0?Math.round(d.dias/propTurnos*100):0}))
+    .sort((a,b)=>b.take-a.take).slice(0,8);
+  const semanas=Object.entries(semMap).sort()
+    .map(([s,v])=>({sem:s,total:v.reduce((a,b)=>a+b,0),avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}));
+  const diasSem=Object.entries(diaMap)
+    .map(([d,v])=>({dia:d,avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}))
+    .sort((a,b)=>b.avg-a.avg);
+  return {propPool,propBarra,propTurnos,amCount,pmCount,amPool,pmPool,
+          topProp,sectores,semanas,diasSem};
+}
+
+// ════════════════════════════════════════════════════════════════
+// REPORTE DE VENTAS MENSUAL
+// ════════════════════════════════════════════════════════════════
+function reporteVentasMensual() {
+  const {prefix,mesNombre,anio,tz} = _prefixMesAnterior();
+  const v = _calcVentas(prefix, tz);
+  if (v.diasVentas === 0) return;
+  const delta = v.prevVent > 0 ? ((v.ventTotal-v.prevVent)/v.prevVent*100).toFixed(1) : null;
+  const deltaStr = delta!==null ? (delta>=0?`+${delta}%`:`${delta}%`) : null;
+  const deltaColor = delta>0?'#4a7c59':'#c23b22';
+  const maxSem = v.semanas.length>0 ? Math.max(...v.semanas.map(s=>s.total)) : 1;
+  const maxDia = v.diasSem.length>0  ? v.diasSem[0].avg   : 1;
+  const totalCanal = v.ventSalon+v.ventCaj+v.ventDel;
+  const iComTot    = v.iCom+v.iBeb;
+
+  const htmlBody = `<div style="font-family:Georgia,sans-serif;max-width:640px;margin:0 auto;background:#f5f0e8">
+${_emailHeader('Reporte de Ventas', mesNombre, anio)}
+<div style="padding:24px 28px">
+<h2 style="font-size:14px;color:#2a4a6b;margin:0 0 14px;border-bottom:2px solid #2a4a6b;padding-bottom:8px">📈 Ventas · ${mesNombre} ${anio}</h2>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  ${_kRow('Ventas totales restaurante', _fmt(v.ventTotal), true)}
+  ${_kRow('Salón', _fmtS(v.ventSalon))}
+  ${v.ventDel>0?_kRow('Delivery',_fmtS(v.ventDel)):''}
+  ${v.ventCaj>0?_kRow('Caja / Para llevar',_fmtS(v.ventCaj)):''}
+  ${_kRow('Días con registro', v.diasVentas+' días')}
+  ${v.pax>0?_kRow('Comensales (PAX)', v.pax.toLocaleString('es-CR')+' personas'):''}
+  ${v.pax>0&&v.ventSalon>0?_kRow('Ticket promedio / PAX', _fmt(v.ventSalon/v.pax)):''}
+  ${v.diasVentas>0?_kRow('Promedio diario', _fmt(v.ventTotal/v.diasVentas)):''}
+  ${deltaStr?_kRow('vs mes anterior','<span style="color:'+deltaColor+';font-weight:700">'+deltaStr+'</span>'):''}
+</table>
+${totalCanal>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Distribución por Canal</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${v.ventSalon>0?_barRow('Salón',v.ventSalon,totalCanal,'#2a4a6b',(v.ventSalon/totalCanal*100).toFixed(0)+'%'):''}
+  ${v.ventDel>0?_barRow('Delivery',v.ventDel,totalCanal,'#4a7c59',(v.ventDel/totalCanal*100).toFixed(0)+'%'):''}
+  ${v.ventCaj>0?_barRow('Caja',v.ventCaj,totalCanal,'#c8a96e',(v.ventCaj/totalCanal*100).toFixed(0)+'%'):''}
+</table>`:''}
+${iComTot>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Mix Comida / Bebidas</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${_barRow('Comida',v.iCom,iComTot,'#c8a96e',(v.iCom/iComTot*100).toFixed(0)+'%')}
+  ${_barRow('Bebidas',v.iBeb,iComTot,'#2a7a6a',(v.iBeb/iComTot*100).toFixed(0)+'%')}
+</table>`:''}
+${v.semanas.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Tendencia Semanal</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${v.semanas.map((s,i)=>_barRow('Semana '+(i+1),s.total,maxSem,'#2a4a6b','')).join('')}
+</table>`:''}
+${v.diasSem.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Promedio por Día de Semana</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${v.diasSem.map(d=>_barRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1),d.avg,maxDia,'#c8a96e','×'+d.count)).join('')}
+</table>`:''}
+${v.topSal.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Top Saloneros</h3>
+<table style="width:100%;border-collapse:collapse">
+  <tr><th style="${_th}">#</th><th style="${_th}">Empleado</th><th style="${_th};text-align:right">Ventas</th><th style="${_th};text-align:center">Servicios</th><th style="${_th};text-align:right">Venta prom.</th><th style="${_th};text-align:center">Pax tot.</th><th style="${_th};text-align:center">Pax/serv.</th><th style="${_th};text-align:right">Ticket p.</th></tr>
+  ${v.topSal.map((s,i)=>`<tr><td style="${_td};color:#aaa">${i+1}</td><td style="${_td};font-weight:bold">${s.nombre}</td><td style="${_td};text-align:right;font-weight:700;color:#2a4a6b">${_fmt(s.ventas)}</td><td style="${_td};text-align:center;color:#888">${s.servicios}</td><td style="${_td};text-align:right">${_fmtS(s.ventaProm)}</td><td style="${_td};text-align:center;color:#888">${s.paxTotal||'—'}</td><td style="${_td};text-align:center;color:#666">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td style="${_td};text-align:right;color:#666">${_fmtS(s.ticketProm)}</td></tr>`).join('')}
+</table>`:''}
+</div>${_emailFooter(mesNombre,anio)}</div>`;
+
+  GmailApp.sendEmail('satorisushibar@gmail.com',
+    `📈 Satori — Ventas ${mesNombre} ${anio}`,
+    `Ventas ${mesNombre} ${anio}: ${_fmt(v.ventTotal)}. ${v.diasVentas} días.`,
+    { htmlBody });
+}
+
+// ════════════════════════════════════════════════════════════════
+// REPORTE DE PROPINAS MENSUAL
+// ════════════════════════════════════════════════════════════════
+function reportePropinaMensual() {
+  const {prefix,mesNombre,anio,tz} = _prefixMesAnterior();
+  const p = _calcPropinas(prefix, tz);
+  if (p.propTurnos === 0) return;
+  const maxSem = p.semanas.length>0 ? Math.max(...p.semanas.map(s=>s.avg)) : 1;
+  const maxDia = p.diasSem.length>0  ? p.diasSem[0].avg   : 1;
+  const maxSec = p.sectores.length>0 ? p.sectores[0].total : 1;
+  const SECLAB={salonero:'Saloneros',barman:'Barra',cocina:'Cocina',runner:'Runners',manager:'Management'};
+  const SECCOL={salonero:'#2a7a6a',barman:'#2a4a6b',cocina:'#c8a96e',runner:'#4a7c59',manager:'#8a8070'};
+
+  const htmlBody = `<div style="font-family:Georgia,sans-serif;max-width:640px;margin:0 auto;background:#f5f0e8">
+${_emailHeader('Reporte de Propinas', mesNombre, anio)}
+<div style="padding:24px 28px">
+<h2 style="font-size:14px;color:#2a7a6a;margin:0 0 14px;border-bottom:2px solid #2a7a6a;padding-bottom:8px">💰 Propinas · ${mesNombre} ${anio}</h2>
+<table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+  ${_kRow('Turnos registrados', p.propTurnos+' ('+p.amCount+' AM · '+p.pmCount+' PM)')}
+  ${_kRow('Pool total distribuido', _fmt(p.propPool), true)}
+  ${p.propBarra>0?_kRow('Pool barra ('+(p.propPool>0?(p.propBarra/p.propPool*100).toFixed(0):0)+'% del total)', _fmt(p.propBarra)):''}
+  ${p.propTurnos>0?_kRow('Promedio por turno', _fmt(p.propPool/p.propTurnos)):''}
+  ${p.amCount>0?_kRow('Promedio turno AM', _fmt(p.amPool/p.amCount)):''}
+  ${p.pmCount>0?_kRow('Promedio turno PM', _fmt(p.pmPool/p.pmCount)):''}
+  ${p.diasSem.length>0?_kRow('Mejor día', p.diasSem[0].dia.charAt(0).toUpperCase()+p.diasSem[0].dia.slice(1)+' · '+_fmt(p.diasSem[0].avg)):''}
+  ${p.diasSem.length>1?_kRow('Día más bajo', p.diasSem[p.diasSem.length-1].dia.charAt(0).toUpperCase()+p.diasSem[p.diasSem.length-1].dia.slice(1)+' · '+_fmt(p.diasSem[p.diasSem.length-1].avg)):''}
+</table>
+${p.semanas.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Tendencia Semanal · Pool Promedio</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${p.semanas.map((s,i)=>_barRow('Semana '+(i+1),s.avg,maxSem,'#2a7a6a','×'+s.count)).join('')}
+</table>`:''}
+${p.diasSem.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Pool Promedio por Día</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  ${p.diasSem.map(d=>_barRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1),d.avg,maxDia,'#c8a96e','×'+d.count)).join('')}
+</table>`:''}
+${p.topProp.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Top Empleados por Take-Home</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  <tr><th style="${_th}">#</th><th style="${_th}">Empleado</th><th style="${_th}">Rol</th><th style="${_th};text-align:center">Turnos</th><th style="${_th};text-align:right">Take-Home</th><th style="${_th};text-align:right">Prom/turno</th><th style="${_th};text-align:center">Constancia</th></tr>
+  ${p.topProp.map((e,i)=>`<tr><td style="${_td};color:#aaa">${i+1}</td><td style="${_td};font-weight:bold">${e.nombre}</td><td style="${_td};color:#888;font-size:11px">${e.rol}</td><td style="${_td};text-align:center;color:#888">${e.dias}</td><td style="${_td};text-align:right;font-weight:700;color:#c8a96e">${_fmt(e.take)}</td><td style="${_td};text-align:right;color:#666">${_fmt(e.prom)}</td><td style="${_td};text-align:center"><span style="color:${e.constancia>=80?'#4a7c59':e.constancia>=50?'#c8a96e':'#aaa'}">${e.constancia}%</span></td></tr>`).join('')}
+</table>`:''}
+${p.sectores.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Distribución por Sector</h3>
+<table style="width:100%;border-collapse:collapse">
+  ${p.sectores.map(s=>_barRow(SECLAB[s.rol]||s.rol,s.total,maxSec,SECCOL[s.rol]||'#aaa',s.pct.toFixed(1)+'%')).join('')}
+</table>`:''}
+</div>${_emailFooter(mesNombre,anio)}</div>`;
+
+  GmailApp.sendEmail('satorisushibar@gmail.com',
+    `💰 Satori — Propinas ${mesNombre} ${anio}`,
+    `Propinas ${mesNombre} ${anio}: Pool ${_fmt(p.propPool)}. ${p.propTurnos} turnos. Prom: ${_fmt(p.propPool/p.propTurnos)}/turno.`,
+    { htmlBody });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// LEGACY — mantener compatibilidad (no usar directamente)
+// ─────────────────────────────────────────────────────────────────
+function _legacyUnused() {
   const ss      = SpreadsheetApp.getActiveSpreadsheet();
   const hoy     = new Date();
   const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
@@ -1189,8 +1614,16 @@ function reporteMensualCompleto() {
   }
 
   const topSal = Object.entries(salMap)
-    .map(([n,d])=>({nombre:n,...d,prom:d.pax>0?d.total/d.pax:0}))
-    .sort((a,b)=>b.total-a.total).slice(0,5);
+    .map(([nombre, d]) => ({
+      nombre,
+      ventas:    d.total,
+      servicios: d.dias,
+      ventaProm: d.dias > 0  ? d.total / d.dias : 0,
+      paxTotal:  d.pax,
+      paxProm:   d.dias > 0  ? d.pax   / d.dias : 0,
+      ticketProm:d.pax > 0   ? d.total / d.pax  : 0
+    }))
+    .sort((a,b) => b.ventas - a.ventas).slice(0,5);
 
   // ── 2. PROPINAS (propinas_turnos) ─────────────────────────────
   let propPool=0, propBarra=0, propTurnos=0;
@@ -1252,13 +1685,25 @@ function reporteMensualCompleto() {
     ${topSal.length > 0 ? `
     <h3 style="font-size:13px;color:#444;margin:20px 0 8px">Top saloneros por ventas</h3>
     <table style="width:100%;border-collapse:collapse">
-      <tr><th style="${thStyle}">#</th><th style="${thStyle}">Salonero</th><th style="${thStyle};text-align:center">Días</th><th style="${thStyle};text-align:right">Ventas</th><th style="${thStyle};text-align:right">Ticket prom.</th></tr>
+      <tr>
+        <th style="${thStyle}">#</th>
+        <th style="${thStyle}">Empleado</th>
+        <th style="${thStyle};text-align:right">Ventas</th>
+        <th style="${thStyle};text-align:center">Servicios</th>
+        <th style="${thStyle};text-align:right">Venta prom.</th>
+        <th style="${thStyle};text-align:center">Pax total</th>
+        <th style="${thStyle};text-align:center">Pax prom.</th>
+        <th style="${thStyle};text-align:right">Ticket prom.</th>
+      </tr>
       ${topSal.map((s,i)=>`<tr>
         <td style="${tdStyle};color:#bbb">${i+1}</td>
         <td style="${tdStyle};font-weight:bold">${s.nombre}</td>
-        <td style="${tdStyle};text-align:center;color:#888">${s.dias}</td>
-        <td style="${tdStyle};text-align:right;font-weight:bold;color:#2a4a6b">${fmt(s.total)}</td>
-        <td style="${tdStyle};text-align:right;color:#666">${s.prom>0?fmt(s.prom):'—'}</td>
+        <td style="${tdStyle};text-align:right;font-weight:bold;color:#2a4a6b">${fmt(s.ventas)}</td>
+        <td style="${tdStyle};text-align:center;color:#888">${s.servicios}</td>
+        <td style="${tdStyle};text-align:right;color:#555">${s.ventaProm>0?fmt(s.ventaProm):'—'}</td>
+        <td style="${tdStyle};text-align:center;color:#888">${s.paxTotal||'—'}</td>
+        <td style="${tdStyle};text-align:center;color:#666">${s.paxProm>0?Math.round(s.paxProm):'—'}</td>
+        <td style="${tdStyle};text-align:right;color:#666">${s.ticketProm>0?fmt(s.ticketProm):'—'}</td>
       </tr>`).join('')}
     </table>` : ''}
   </div>` : ''}
@@ -1296,12 +1741,7 @@ function reporteMensualCompleto() {
 
 </div>`;
 
-  GmailApp.sendEmail(
-    'satorisushibar@gmail.com',
-    `📊 Satori — Reporte ${mesNombre} ${anio}`,
-    `Reporte ${mesNombre} ${anio}. Ventas: ${fmt(ventRest||ventSalon)}. Pool propinas: ${fmt(propPool)}.`,
-    { htmlBody }
-  );
+  // legacy — no llamar directamente
 }
 
 // ══════════════════════════════════════════════════════════════
