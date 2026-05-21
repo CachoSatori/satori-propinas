@@ -206,11 +206,26 @@ const MOCK_DATA = {
     pax:1840, diasVentas:26, ticketProm:6087, iCom:1240, iBeb:600,
     prevVent:13200000,
     topSal:[
-      { nombre:'Carlos M.',  ventas:2850000, servicios:78, ventaProm:36538, paxTotal:312, paxProm:4.0, ticketProm:9134 },
-      { nombre:'Andrés V.',  ventas:2410000, servicios:71, ventaProm:33944, paxTotal:278, paxProm:3.9, ticketProm:8669 },
-      { nombre:'Sofía R.',   ventas:2180000, servicios:65, ventaProm:33538, paxTotal:255, paxProm:3.9, ticketProm:8549 },
-      { nombre:'Diego L.',   ventas:1950000, servicios:60, ventaProm:32500, paxTotal:235, paxProm:3.9, ticketProm:8298 },
-      { nombre:'Valeria T.', ventas:1820000, servicios:55, ventaProm:33091, paxTotal:221, paxProm:4.0, ticketProm:8235 }
+      { nombre:'Sofía R.',   ventas:2180000, servicios:24, paxTotal:255, paxProm:10.6, ticketProm:8549, constancia:92, irs:88 },
+      { nombre:'Carlos M.',  ventas:2850000, servicios:22, paxTotal:312, paxProm:14.2, ticketProm:9134, constancia:85, irs:84 },
+      { nombre:'Andrés V.',  ventas:2410000, servicios:21, paxTotal:278, paxProm:13.2, ticketProm:8669, constancia:81, irs:79 },
+      { nombre:'Diego L.',   ventas:1950000, servicios:19, paxTotal:235, paxProm:12.4, ticketProm:8298, constancia:73, irs:71 },
+      { nombre:'Valeria T.', ventas:1820000, servicios:16, paxTotal:221, paxProm:13.8, ticketProm:8235, constancia:62, irs:63 },
+      { nombre:'Marco A.',   ventas:1340000, servicios:14, paxTotal:180, paxProm:12.9, ticketProm:7444, constancia:54, irs:54 }
+    ],
+    topComida:[
+      { nombre:'SUSHI NIGUIRI ATÚN', qty:312, monto:1872000 },
+      { nombre:'ROLL SATORI', qty:287, monto:1579000 },
+      { nombre:'SASHIMI SALMÓN', qty:241, monto:1446000 },
+      { nombre:'COMBO FAMILIAR', qty:198, monto:2376000 },
+      { nombre:'TEMPURA CAMARONES', qty:175, monto:875000 }
+    ],
+    topBebidas:[
+      { nombre:'CERVEZA IMPERIAL', qty:428, monto:856000 },
+      { nombre:'AGUA MINERAL', qty:386, monto:386000 },
+      { nombre:'SAKE CALIENTE', qty:201, monto:804000 },
+      { nombre:'COCA COLA', qty:198, monto:297000 },
+      { nombre:'JUGO NATURAL', qty:143, monto:357000 }
     ],
     semanas:[
       { sem:1, total:2650000, dias:6, avg:441667 }, { sem:2, total:3100000, dias:7, avg:442857 },
@@ -425,12 +440,31 @@ function renderVentas(data, mes, anio) {
       html += `</div><div style="margin-bottom:12px"></div>`;
     }
     if (v.topSal && v.topSal.length > 0) {
-      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏆 Top Saloneros</div>
-      <table class="em-table" style="margin-bottom:4px">
-        <thead><tr><th>#</th><th>Empleado</th><th class="r">Ventas</th><th class="c">Servicios</th><th class="r">V. prom.</th><th class="c">Pax tot.</th><th class="c">Pax/serv.</th><th class="r">Ticket p.</th></tr></thead><tbody>`;
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏆 Top Saloneros · IRS</div>
+      <div style="font-size:9px;color:var(--muted);margin-bottom:6px;letter-spacing:.05em">IRS = 45% ticket/PAX + 35% constancia + 20% PAX prom/servicio</div>
+      <table class="em-table" style="margin-bottom:12px">
+        <thead><tr><th>#</th><th>Empleado</th><th class="c">IRS</th><th class="r">Ticket/PAX</th><th class="c">Días</th><th class="c">Constancia</th><th class="c">PAX/serv.</th><th class="r">Ventas</th></tr></thead><tbody>`;
       v.topSal.forEach((s,i) => {
-        html += `<tr><td>${rbadge(i)}</td><td class="bold">${s.nombre}</td><td class="r" style="color:var(--blue)">${fiS(s.ventas)}</td><td class="c">${s.servicios}</td><td class="r">${fiS(s.ventaProm)}</td><td class="c">${s.paxTotal||'—'}</td><td class="c">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td class="r muted">${fiS(s.ticketProm)}</td></tr>`;
+        const irsC = s.irs>=80?'var(--green)':s.irs>=60?'var(--gold)':'var(--muted)';
+        const conC = s.constancia>=80?'var(--green)':s.constancia>=50?'var(--gold)':'var(--muted)';
+        html += `<tr><td>${rbadge(i)}</td><td class="bold">${s.nombre}</td><td class="c" style="font-weight:700;font-size:13px;color:${irsC}">${s.irs}</td><td class="r" style="color:var(--blue)">${fiS(s.ticketProm)}</td><td class="c">${s.servicios}</td><td class="c" style="color:${conC}">${s.constancia}%</td><td class="c">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td class="r muted">${fiS(s.ventas)}</td></tr>`;
       });
+      html += `</tbody></table>`;
+    }
+    if ((v.topComida&&v.topComida.length>0)||(v.topBebidas&&v.topBebidas.length>0)) {
+      html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🍣 Top 5 Productos</div>
+      <table class="em-table" style="margin-bottom:4px">
+        <thead><tr><th colspan="2" style="color:var(--gold)">🍱 Comida</th><th colspan="2" style="color:var(--teal)">🍺 Bebidas</th></tr></thead><tbody>`;
+      for (let i=0;i<5;i++) {
+        const c = v.topComida&&v.topComida[i];
+        const b = v.topBebidas&&v.topBebidas[i];
+        html += `<tr>
+          <td class="bold" style="color:var(--gold)">${c?c.nombre:'—'}</td>
+          <td class="r muted">${c?Math.round(c.qty)+' u · '+fi(c.monto):''}</td>
+          <td class="bold" style="color:var(--teal)">${b?b.nombre:'—'}</td>
+          <td class="r muted">${b?Math.round(b.qty)+' u · '+fi(b.monto):''}</td>
+        </tr>`;
+      }
       html += `</tbody></table>`;
     }
   } else {

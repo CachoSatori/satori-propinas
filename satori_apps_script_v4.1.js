@@ -1343,7 +1343,17 @@ function _emailFooter(mes, anio) {
 function _calcVentas(prefix, tz) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let ventSalon=0, ventCaj=0, ventDel=0, pax=0, iCom=0, iBeb=0, diasVentas=0;
-  const salMap={}, semMap={}, dayTotals={};
+  const salMap={}, semMap={}, dayTotals={}, prodMap={};
+
+  // Cargar clasificación de productos (comida/bebida) desde hoja 'productos'
+  const tipoMap = {};
+  const wsProd = ss.getSheetByName(SHEET_NAME_PRODUCTOS);
+  if (wsProd && wsProd.getLastRow() > 1) {
+    wsProd.getRange(2,1,wsProd.getLastRow()-1,2).getValues().forEach(r => {
+      if (r[0]) tipoMap[String(r[0]).toUpperCase().trim()] = String(r[1]).toLowerCase();
+    });
+  }
+
   const wsDias = ss.getSheetByName(SHEET_NAME_DIAS);
   if (wsDias && wsDias.getLastRow() > 1) {
     wsDias.getRange(2,1,wsDias.getLastRow()-1,3).getValues().forEach(r => {
@@ -1365,20 +1375,28 @@ function _calcVentas(prefix, tz) {
           dayTotal+=s.total||0;
           if (!salMap[k]) salMap[k]={total:0,pax:0,servicios:0};
           salMap[k].total+=s.total||0; salMap[k].pax+=s.pax||0; salMap[k].servicios++;
+          // Acumular productos
+          (s.prods||[]).forEach(([pname,qty,monto]) => {
+            const pk = String(pname).toUpperCase().trim();
+            const tipo = tipoMap[pk] || 'comida';
+            if (!prodMap[pk]) prodMap[pk] = { qty:0, monto:0, tipo };
+            prodMap[pk].qty += qty||0; prodMap[pk].monto += monto||0;
+          });
         }
       });
       semMap[sem].total += dayTotal;
-      // Total del día (no por salonero) para promedio por día de semana
       const dow = new Date(fecha+'T12:00:00').toLocaleDateString('es-CR',{weekday:'long'}).split(',')[0].toLowerCase();
       dayTotals[fecha] = { total: dayTotal, dow };
     });
   }
-  // Agrupar por día de semana usando totales diarios (count = días reales, no saloneros)
+
+  // Agrupar por día de semana
   const diaMap = {};
   Object.values(dayTotals).forEach(({ total, dow }) => {
     if (!diaMap[dow]) diaMap[dow] = [];
     diaMap[dow].push(total);
   });
+
   // Mes anterior para comparación δ
   const [y,m] = prefix.split('-').map(Number);
   const prevPrefix = `${m===1?y-1:y}-${String(m===1?12:m-1).padStart(2,'0')}`;
@@ -1392,16 +1410,37 @@ function _calcVentas(prefix, tz) {
       Object.entries(day.saloneros).forEach(([,s])=>{ prevVent+=s.total||0; });
     });
   }
-  const topSal = Object.entries(salMap)
-    .map(([nombre,d])=>({nombre,ventas:d.total,servicios:d.servicios,
-      ventaProm:d.servicios>0?d.total/d.servicios:0,paxTotal:d.pax,
-      paxProm:d.servicios>0?d.pax/d.servicios:0,ticketProm:d.pax>0?d.total/d.pax:0}))
-    .sort((a,b)=>b.ventas-a.ventas).slice(0,5);
+
+  // IRS: Índice de Rendimiento del Salonero
+  // 45% ticket/PAX + 35% constancia + 20% PAX promedio/servicio (todos normalizados 0-100)
+  const salArr = Object.entries(salMap).map(([nombre,d]) => ({
+    nombre, ventas:d.total, servicios:d.servicios,
+    paxTotal:d.pax,
+    ticketProm: d.pax>0 ? d.total/d.pax : 0,
+    paxProm: d.servicios>0 ? d.pax/d.servicios : 0,
+    constancia: diasVentas>0 ? Math.round(d.servicios/diasVentas*100) : 0
+  }));
+  const maxTicket = Math.max(...salArr.map(s=>s.ticketProm), 1);
+  const maxPaxProm = Math.max(...salArr.map(s=>s.paxProm), 1);
+  salArr.forEach(s => {
+    s.irs = Math.round(
+      (s.ticketProm/maxTicket*100) * 0.45 +
+      s.constancia * 0.35 +
+      (s.paxProm/maxPaxProm*100) * 0.20
+    );
+  });
+  const topSal = salArr.sort((a,b)=>b.irs-a.irs).slice(0,8);
+
+  // Top 5 productos por tipo
+  const allProds = Object.entries(prodMap).map(([nombre,d])=>({nombre,...d})).sort((a,b)=>b.monto-a.monto);
+  const topComida  = allProds.filter(p=>p.tipo!=='bebida').slice(0,5);
+  const topBebidas = allProds.filter(p=>p.tipo==='bebida').slice(0,5);
+
   const semanas = Object.entries(semMap).sort().map(([s,{total,dias}])=>({sem:s,total,dias,avg:dias>0?Math.round(total/dias):0}));
   const diasSem = Object.entries(diaMap)
-    .map(([d,v])=>({dia:d,avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}))
+    .map(([d,v])=>({dia:d,avg:Math.round(v.reduce((a,b)=>a+b,0)/v.length),count:v.length}))
     .sort((a,b)=>b.avg-a.avg);
-  return {ventSalon,ventCaj,ventDel,pax,iCom,iBeb,diasVentas,topSal,semanas,diasSem,
+  return {ventSalon,ventCaj,ventDel,pax,iCom,iBeb,diasVentas,topSal,topComida,topBebidas,semanas,diasSem,
           ventTotal:ventSalon+ventCaj+ventDel,prevVent};
 }
 
@@ -1505,10 +1544,28 @@ ${v.diasSem.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 6px;letter
 <table style="width:100%;border-collapse:collapse;margin-bottom:18px">
   ${v.diasSem.map(d=>_barRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1),d.avg,maxDia,'#c8a96e',d.count+' día'+(d.count!==1?'s':''))).join('')}
 </table>`:''}
-${v.topSal.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Top Saloneros</h3>
-<table style="width:100%;border-collapse:collapse">
-  <tr><th style="${_th}">#</th><th style="${_th}">Empleado</th><th style="${_th};text-align:right">Ventas</th><th style="${_th};text-align:center">Servicios</th><th style="${_th};text-align:right">Venta prom.</th><th style="${_th};text-align:center">Pax tot.</th><th style="${_th};text-align:center">Pax/serv.</th><th style="${_th};text-align:right">Ticket p.</th></tr>
-  ${v.topSal.map((s,i)=>`<tr><td style="${_td};color:#aaa">${i+1}</td><td style="${_td};font-weight:bold">${s.nombre}</td><td style="${_td};text-align:right;font-weight:700;color:#2a4a6b">${_fmt(s.ventas)}</td><td style="${_td};text-align:center;color:#888">${s.servicios}</td><td style="${_td};text-align:right">${_fmtS(s.ventaProm)}</td><td style="${_td};text-align:center;color:#888">${s.paxTotal||'—'}</td><td style="${_td};text-align:center;color:#666">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td style="${_td};text-align:right;color:#666">${_fmtS(s.ticketProm)}</td></tr>`).join('')}
+${v.topSal.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 4px;letter-spacing:.12em;text-transform:uppercase">🏆 Top Saloneros · IRS</h3>
+<p style="font-size:9px;color:#999;margin:0 0 8px">IRS = 45% ticket/PAX + 35% constancia + 20% PAX prom/servicio · ordenado por rendimiento global</p>
+<table style="width:100%;border-collapse:collapse;margin-bottom:18px">
+  <tr><th style="${_th}">#</th><th style="${_th}">Empleado</th><th style="${_th};text-align:center">IRS</th><th style="${_th};text-align:right">Ticket/PAX</th><th style="${_th};text-align:center">Días</th><th style="${_th};text-align:center">Constancia</th><th style="${_th};text-align:center">PAX/serv.</th><th style="${_th};text-align:right">Ventas</th></tr>
+  ${v.topSal.map((s,i)=>{
+    const irsColor = s.irs>=80?'#4a7c59':s.irs>=60?'#c8a96e':'#888';
+    return `<tr><td style="${_td};color:#aaa">${i+1}</td><td style="${_td};font-weight:bold">${s.nombre}</td><td style="${_td};text-align:center;font-weight:700;font-size:14px;color:${irsColor}">${s.irs}</td><td style="${_td};text-align:right;font-weight:700;color:#2a4a6b">${_fmtS(s.ticketProm)}</td><td style="${_td};text-align:center;color:#888">${s.servicios}</td><td style="${_td};text-align:center;color:${s.constancia>=80?'#4a7c59':s.constancia>=50?'#c8a96e':'#aaa'}">${s.constancia}%</td><td style="${_td};text-align:center;color:#666">${s.paxProm>0?Math.round(s.paxProm):'—'}</td><td style="${_td};text-align:right;color:#555">${_fmt(s.ventas)}</td></tr>`;
+  }).join('')}
+</table>`:''}
+${(v.topComida&&v.topComida.length>0)||(v.topBebidas&&v.topBebidas.length>0)?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">🍣 Top 5 Productos</h3>
+<table style="width:100%;border-collapse:collapse;margin-bottom:6px">
+  <tr><th style="${_th}" colspan="2">🍱 Comida</th><th style="${_th}" colspan="2">🍺 Bebidas</th></tr>
+  ${Array.from({length:5}).map((_,i)=>{
+    const c = v.topComida&&v.topComida[i];
+    const b = v.topBebidas&&v.topBebidas[i];
+    return `<tr>
+      <td style="${_td};color:#c8a96e;font-size:11px">${c?c.nombre:'—'}</td>
+      <td style="${_td};text-align:right;font-size:11px;color:#888">${c?Math.round(c.qty)+' u · '+_fmt(c.monto):''}</td>
+      <td style="${_td};color:#2a7a6a;font-size:11px">${b?b.nombre:'—'}</td>
+      <td style="${_td};text-align:right;font-size:11px;color:#888">${b?Math.round(b.qty)+' u · '+_fmt(b.monto):''}</td>
+    </tr>`;
+  }).join('')}
 </table>`:''}
 </div>${_emailFooter(mesNombre,anio)}</div>`;
 
