@@ -1132,7 +1132,6 @@ function renderTurno() {
   const editBanner = document.getElementById('turno-edit-banner');
   const saveBtn    = document.querySelector('.turno-actions .btn-teal');
   if (DRAFT.editingId) {
-    const tipo = document.getElementById('turno-tipo')?.value || 'PM';
     editBanner.className = 'edit-banner';
     editBanner.style.display = '';
     editBanner.innerHTML = `
@@ -1145,6 +1144,7 @@ function renderTurno() {
     if (saveBtn) saveBtn.textContent = '▶ Guardar Turno';
   }
 
+  const tipo = document.getElementById('turno-tipo')?.value || DRAFT.turno || 'PM';
   const container = document.getElementById('turno-sections');
 
   // Sync draft lineas
