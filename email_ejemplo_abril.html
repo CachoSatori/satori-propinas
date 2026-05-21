@@ -213,14 +213,15 @@ const MOCK_DATA = {
       { nombre:'Valeria T.', ventas:1820000, servicios:55, ventaProm:33091, paxTotal:221, paxProm:4.0, ticketProm:8235 }
     ],
     semanas:[
-      { sem:1, total:2650000, count:6 }, { sem:2, total:3100000, count:7 },
-      { sem:3, total:2980000, count:7 }, { sem:4, total:3420000, count:6 }
+      { sem:1, total:2650000, dias:6, avg:441667 }, { sem:2, total:3100000, dias:7, avg:442857 },
+      { sem:3, total:2980000, dias:7, avg:425714 }, { sem:4, total:3420000, dias:6, avg:570000 },
+      { sem:5, total:1050000, dias:2, avg:525000 }
     ],
     diasSem:[
-      { dia:'lunes',     avg:420000, count:4 }, { dia:'martes',    avg:380000, count:4 },
-      { dia:'miércoles', avg:410000, count:4 }, { dia:'jueves',    avg:540000, count:4 },
-      { dia:'viernes',   avg:680000, count:4 }, { dia:'sábado',    avg:820000, count:4 },
-      { dia:'domingo',   avg:480000, count:2 }
+      { dia:'sábado',    avg:820000, count:4 }, { dia:'viernes',   avg:680000, count:4 },
+      { dia:'jueves',    avg:540000, count:5 }, { dia:'domingo',   avg:480000, count:4 },
+      { dia:'miércoles', avg:410000, count:4 }, { dia:'lunes',     avg:420000, count:4 },
+      { dia:'martes',    avg:380000, count:3 }
     ]
   },
   propinas:{
@@ -383,24 +384,45 @@ function renderVentas(data, mes, anio) {
     }
     if (iComTot > 0) {
       html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🍣 Mix Comida / Bebidas</div>
-      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
-      html += ibarRow('Comida', v.iCom||0, iComTot, 'var(--gold)', ((v.iCom||0)/iComTot*100).toFixed(0)+'%');
-      html += ibarRow('Bebidas', v.iBeb||0, iComTot, 'var(--teal)', ((v.iBeb||0)/iComTot*100).toFixed(0)+'%');
-      html += `</div>`;
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:4px">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:8px;letter-spacing:.05em">Cantidad de ítems vendidos por categoría</div>`;
+      // Ítems como conteo, NO como monto
+      const iComPct = ((v.iCom||0)/iComTot*100).toFixed(0);
+      const iBebPct = ((v.iBeb||0)/iComTot*100).toFixed(0);
+      html += `<div class="ibar-row">
+        <div class="ibar-lbl">Comida</div>
+        <div class="ibar-track"><div class="ibar-fill" style="width:${iComPct}%;background:var(--gold)"></div></div>
+        <div class="ibar-val">${Math.round(v.iCom||0).toLocaleString('es-CR')} ítems<span class="ibar-pct">${iComPct}%</span></div>
+      </div>
+      <div class="ibar-row">
+        <div class="ibar-lbl">Bebidas</div>
+        <div class="ibar-track"><div class="ibar-fill" style="width:${iBebPct}%;background:var(--teal)"></div></div>
+        <div class="ibar-val">${Math.round(v.iBeb||0).toLocaleString('es-CR')} ítems<span class="ibar-pct">${iBebPct}%</span></div>
+      </div>
+      </div><div style="margin-bottom:12px"></div>`;
     }
     if (v.semanas && v.semanas.length > 0) {
       const maxS = Math.max(...v.semanas.map(s=>s.total));
       html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📈 Tendencia Semanal de Ventas</div>
-      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
-      v.semanas.forEach((s,i) => { html += ibarRow('Semana '+(i+1), s.total, maxS, 'var(--blue)', ''); });
-      html += `</div>`;
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:4px">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:8px;letter-spacing:.05em">Total semanal · promedio diario entre paréntesis</div>`;
+      v.semanas.forEach((s,i) => {
+        const dias = s.dias || 1;
+        const avg = s.avg || Math.round(s.total / dias);
+        html += ibarRow(`Sem. ${i+1} (${dias}d)`, s.total, maxS, 'var(--blue)', `~${fi(avg)}/día`);
+      });
+      html += `</div><div style="margin-bottom:12px"></div>`;
     }
     if (v.diasSem && v.diasSem.length > 0) {
-      const maxD = v.diasSem[0].avg;
+      const maxD = Math.max(...v.diasSem.map(d=>d.avg));
       html += `<div class="sec-title" style="font-size:7px;margin-top:4px">📅 Promedio por Día de Semana</div>
-      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px">`;
-      v.diasSem.forEach(d => { html += ibarRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1), d.avg, maxD, 'var(--gold)', '×'+d.count); });
-      html += `</div>`;
+      <div style="background:var(--panel);border:1px solid var(--border);padding:12px 14px;margin-bottom:4px">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:8px;letter-spacing:.05em">Promedio de ventas de salón · entre paréntesis: días de ese tipo en el mes</div>`;
+      v.diasSem.forEach(d => {
+        const label = d.dia.charAt(0).toUpperCase()+d.dia.slice(1);
+        html += ibarRow(label, d.avg, maxD, 'var(--gold)', `${d.count} día${d.count!==1?'s':''}`);
+      });
+      html += `</div><div style="margin-bottom:12px"></div>`;
     }
     if (v.topSal && v.topSal.length > 0) {
       html += `<div class="sec-title" style="font-size:7px;margin-top:4px">🏆 Top Saloneros</div>

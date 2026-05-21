@@ -1343,7 +1343,7 @@ function _emailFooter(mes, anio) {
 function _calcVentas(prefix, tz) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let ventSalon=0, ventCaj=0, ventDel=0, pax=0, iCom=0, iBeb=0, diasVentas=0;
-  const salMap={}, semMap={}, diaMap={};
+  const salMap={}, semMap={}, dayTotals={};
   const wsDias = ss.getSheetByName(SHEET_NAME_DIAS);
   if (wsDias && wsDias.getLastRow() > 1) {
     wsDias.getRange(2,1,wsDias.getLastRow()-1,3).getValues().forEach(r => {
@@ -1354,7 +1354,8 @@ function _calcVentas(prefix, tz) {
       diasVentas++;
       const dNum = parseInt(fecha.split('-')[2]);
       const sem  = dNum<=7?'1':dNum<=14?'2':dNum<=21?'3':dNum<=28?'4':'5';
-      if (!semMap[sem]) semMap[sem] = 0;
+      if (!semMap[sem]) semMap[sem] = { total:0, dias:0 };
+      semMap[sem].dias++;
       let dayTotal = 0;
       Object.entries(day.saloneros).forEach(([nombre, s]) => {
         if (s.esCajero) { ventCaj+=s.total||0; ventDel+=s.delivery||0; }
@@ -1364,14 +1365,20 @@ function _calcVentas(prefix, tz) {
           dayTotal+=s.total||0;
           if (!salMap[k]) salMap[k]={total:0,pax:0,servicios:0};
           salMap[k].total+=s.total||0; salMap[k].pax+=s.pax||0; salMap[k].servicios++;
-          const dow = new Date(fecha+'T12:00:00').toLocaleDateString('es-CR',{weekday:'long'}).split(',')[0].toLowerCase();
-          if (!diaMap[dow]) diaMap[dow]=[];
-          diaMap[dow].push(s.total||0);
         }
       });
-      semMap[sem] += dayTotal;
+      semMap[sem].total += dayTotal;
+      // Total del día (no por salonero) para promedio por día de semana
+      const dow = new Date(fecha+'T12:00:00').toLocaleDateString('es-CR',{weekday:'long'}).split(',')[0].toLowerCase();
+      dayTotals[fecha] = { total: dayTotal, dow };
     });
   }
+  // Agrupar por día de semana usando totales diarios (count = días reales, no saloneros)
+  const diaMap = {};
+  Object.values(dayTotals).forEach(({ total, dow }) => {
+    if (!diaMap[dow]) diaMap[dow] = [];
+    diaMap[dow].push(total);
+  });
   // Mes anterior para comparación δ
   const [y,m] = prefix.split('-').map(Number);
   const prevPrefix = `${m===1?y-1:y}-${String(m===1?12:m-1).padStart(2,'0')}`;
@@ -1390,7 +1397,7 @@ function _calcVentas(prefix, tz) {
       ventaProm:d.servicios>0?d.total/d.servicios:0,paxTotal:d.pax,
       paxProm:d.servicios>0?d.pax/d.servicios:0,ticketProm:d.pax>0?d.total/d.pax:0}))
     .sort((a,b)=>b.ventas-a.ventas).slice(0,5);
-  const semanas = Object.entries(semMap).sort().map(([s,t])=>({sem:s,total:t}));
+  const semanas = Object.entries(semMap).sort().map(([s,{total,dias}])=>({sem:s,total,dias,avg:dias>0?Math.round(total/dias):0}));
   const diasSem = Object.entries(diaMap)
     .map(([d,v])=>({dia:d,avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}))
     .sort((a,b)=>b.avg-a.avg);
@@ -1482,18 +1489,21 @@ ${totalCanal>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spaci
   ${v.ventDel>0?_barRow('Delivery',v.ventDel,totalCanal,'#4a7c59',(v.ventDel/totalCanal*100).toFixed(0)+'%'):''}
   ${v.ventCaj>0?_barRow('Caja',v.ventCaj,totalCanal,'#c8a96e',(v.ventCaj/totalCanal*100).toFixed(0)+'%'):''}
 </table>`:''}
-${iComTot>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Mix Comida / Bebidas</h3>
+${iComTot>0?`<h3 style="font-size:11px;color:#444;margin:0 0 6px;letter-spacing:.12em;text-transform:uppercase">Mix Comida / Bebidas</h3>
+<p style="font-size:9px;color:#999;margin:0 0 8px">Cantidad de ítems vendidos por categoría</p>
 <table style="width:100%;border-collapse:collapse;margin-bottom:18px">
-  ${_barRow('Comida',v.iCom,iComTot,'#c8a96e',(v.iCom/iComTot*100).toFixed(0)+'%')}
-  ${_barRow('Bebidas',v.iBeb,iComTot,'#2a7a6a',(v.iBeb/iComTot*100).toFixed(0)+'%')}
+  <tr><td style="padding:5px 0;color:#777;font-size:11px;width:90px;text-align:right;padding-right:10px">Comida</td><td style="padding:5px 0"><div style="background:#ece8e0;height:10px"><div style="width:${Math.round(v.iCom/iComTot*100)}%;height:10px;background:#c8a96e"></div></div></td><td style="padding:5px 0 5px 10px;font-size:11px;font-weight:500;white-space:nowrap">${Math.round(v.iCom).toLocaleString('es-CR')} ítems <span style="color:#aaa;font-size:10px">${(v.iCom/iComTot*100).toFixed(0)}%</span></td></tr>
+  <tr><td style="padding:5px 0;color:#777;font-size:11px;width:90px;text-align:right;padding-right:10px">Bebidas</td><td style="padding:5px 0"><div style="background:#ece8e0;height:10px"><div style="width:${Math.round(v.iBeb/iComTot*100)}%;height:10px;background:#2a7a6a"></div></div></td><td style="padding:5px 0 5px 10px;font-size:11px;font-weight:500;white-space:nowrap">${Math.round(v.iBeb).toLocaleString('es-CR')} ítems <span style="color:#aaa;font-size:10px">${(v.iBeb/iComTot*100).toFixed(0)}%</span></td></tr>
 </table>`:''}
-${v.semanas.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Tendencia Semanal</h3>
+${v.semanas.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 6px;letter-spacing:.12em;text-transform:uppercase">Tendencia Semanal</h3>
+<p style="font-size:9px;color:#999;margin:0 0 8px">Total y promedio diario por semana del mes</p>
 <table style="width:100%;border-collapse:collapse;margin-bottom:18px">
-  ${v.semanas.map((s,i)=>_barRow('Semana '+(i+1),s.total,maxSem,'#2a4a6b','')).join('')}
+  ${v.semanas.map((s,i)=>_barRow('Sem.'+(i+1)+' ('+s.dias+'d)',s.total,maxSem,'#2a4a6b','~'+_fmt(s.avg)+'/día')).join('')}
 </table>`:''}
-${v.diasSem.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Promedio por Día de Semana</h3>
+${v.diasSem.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 6px;letter-spacing:.12em;text-transform:uppercase">Promedio por Día de Semana</h3>
+<p style="font-size:9px;color:#999;margin:0 0 8px">Promedio de ventas de salón por día · entre paréntesis: cuántos de esos días hubo en el mes</p>
 <table style="width:100%;border-collapse:collapse;margin-bottom:18px">
-  ${v.diasSem.map(d=>_barRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1),d.avg,maxDia,'#c8a96e','×'+d.count)).join('')}
+  ${v.diasSem.map(d=>_barRow(d.dia.charAt(0).toUpperCase()+d.dia.slice(1),d.avg,maxDia,'#c8a96e',d.count+' día'+(d.count!==1?'s':''))).join('')}
 </table>`:''}
 ${v.topSal.length>0?`<h3 style="font-size:11px;color:#444;margin:0 0 8px;letter-spacing:.12em;text-transform:uppercase">Top Saloneros</h3>
 <table style="width:100%;border-collapse:collapse">
