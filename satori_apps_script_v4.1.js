@@ -75,7 +75,7 @@ function doGet(e) {
     else if (action === 'getEmpleadosPropinas') result = getEmpleados();
     else if (action === 'getRolesPropinas')     result = getRolesPropinas();
     else if (action === 'getTurnosPropinas')    result = getTurnosPropinas(params);
-    else if (action === 'setupReporteMensual')  result = setupReporteMensual();
+    else if (action === 'enviarReporteMensual') result = enviarReporteMensualAhora();
 
     output.setContent(JSON.stringify(result));
   } catch(err) {
@@ -1102,9 +1102,24 @@ function deleteTurnoPropinas(id) {
 // ══════════════════════════════════════════════════════════════
 
 /**
- * Activa el trigger mensual.
- * Llamar vía GET: ?action=setupReporteMensual&secret=satori2026
- * o desde la pestaña Admin de la app de Propinas.
+ * Envía el reporte del mes anterior inmediatamente (llamable desde la app vía GET).
+ * No usa ScriptApp — funciona desde el Web App sin permisos especiales.
+ */
+function enviarReporteMensualAhora() {
+  try {
+    reporteMensualCompleto();
+    return { ok: true, msg: 'Reporte enviado a satorisushibar@gmail.com' };
+  } catch(e) {
+    return { ok: false, error: e.toString() };
+  }
+}
+
+/**
+ * Configura el trigger mensual automático.
+ * DEBE ejecutarse desde el editor de Apps Script (Ejecutar → setupReporteMensual),
+ * NO desde la web app (ScriptApp requiere permisos elevados).
+ * Alternativa: en el editor, usar el ícono de reloj (Triggers) → + Agregar trigger →
+ *   Función: reporteMensualCompleto · Tipo: Temporizador mensual · Día 1.
  */
 function setupReporteMensual() {
   const HANDLER = 'reporteMensualCompleto';
@@ -1116,7 +1131,7 @@ function setupReporteMensual() {
   });
   ScriptApp.newTrigger(HANDLER)
     .timeBased().onMonthDay(1).atHour(8).inTimezone('America/Costa_Rica').create();
-  return { ok: true, msg: 'Reporte mensual activado. Se enviará el 1° de cada mes a las 8am a satorisushibar@gmail.com' };
+  return { ok: true, msg: 'Trigger mensual creado.' };
 }
 
 /**

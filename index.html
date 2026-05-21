@@ -788,18 +788,29 @@ header {
         <div class="sl">Reporte Mensual</div>
         <div class="admin-card">
           <div class="admin-card-head">
-            <span class="admin-card-title">Email automático el 1° de cada mes</span>
+            <span class="admin-card-title">Email a satorisushibar@gmail.com</span>
           </div>
-          <div style="padding:14px 16px;font-size:10px;color:var(--muted);line-height:1.7">
-            Resumen de ventas y propinas enviado automáticamente a
-            <strong style="color:var(--ink)">satorisushibar@gmail.com</strong>
-            el 1° de cada mes a las 8am. Activar una sola vez.
+          <div style="padding:14px 16px 10px;font-size:10px;color:var(--muted);line-height:1.7">
+            <strong style="color:var(--ink);display:block;margin-bottom:6px">Probar el reporte</strong>
+            Enviá el reporte del mes anterior ahora para verificar que funciona.
           </div>
-          <div style="padding:0 16px 16px">
-            <button class="btn btn-teal btn-sm" onclick="activarReporteMensual()" style="width:100%">
-              📧 Activar reporte mensual
+          <div style="padding:0 16px 14px">
+            <button class="btn btn-teal btn-sm" onclick="enviarReporteAhora()" style="width:100%">
+              📧 Enviar reporte ahora
             </button>
-            <div id="reporte-status" style="font-size:9px;color:var(--muted);margin-top:8px;text-align:center"></div>
+            <div id="reporte-status" style="font-size:9px;color:var(--muted);margin-top:8px;text-align:center;min-height:14px"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding:12px 16px 14px">
+            <strong style="font-size:10px;color:var(--ink);display:block;margin-bottom:8px">Automatizar el 1° de cada mes</strong>
+            <ol style="font-size:10px;color:var(--muted);line-height:2;margin:0;padding-left:16px">
+              <li>Abrí <a href="https://script.google.com" target="_blank" style="color:var(--teal)">script.google.com</a></li>
+              <li>Buscá el proyecto <strong style="color:var(--ink)">Satori Backend</strong> y abrilo</li>
+              <li>En el menú izquierdo hacé click en el ícono de <strong style="color:var(--ink)">reloj ⏰</strong> (Activadores)</li>
+              <li>Click en <strong style="color:var(--ink)">+ Agregar activador</strong></li>
+              <li>Función: <code style="background:#f0ece4;padding:1px 5px;border-radius:2px">reporteMensualCompleto</code></li>
+              <li>Origen: <strong style="color:var(--ink)">Temporizador</strong> → <strong style="color:var(--ink)">Mes</strong> → Día <strong style="color:var(--ink)">1</strong></li>
+              <li>Guardá ✅</li>
+            </ol>
           </div>
         </div>
       </div>
@@ -2738,21 +2749,21 @@ function toggleMiMes(safeKey) {
   if (arr) arr.textContent = isOpen ? '▶' : '▼';
 }
 
-// ── Activar reporte mensual ───────────────────────────────────
-async function activarReporteMensual() {
+// ── Enviar reporte mensual ahora ─────────────────────────────
+async function enviarReporteAhora() {
   const statusEl = document.getElementById('reporte-status');
-  if (statusEl) statusEl.textContent = 'Activando...';
+  if (statusEl) statusEl.textContent = 'Enviando...';
   try {
-    const res = await apiFetch({ action: 'setupReporteMensual' });
+    const res = await apiFetch({ action: 'enviarReporteMensual' });
     if (res.ok) {
-      if (statusEl) statusEl.textContent = '✅ Activado. Se enviará el 1° de cada mes.';
-      toast('Reporte mensual activado', 'success');
+      if (statusEl) statusEl.textContent = '✅ ' + (res.msg || 'Reporte enviado.');
+      toast('Reporte enviado a satorisushibar@gmail.com', 'success');
     } else {
       throw new Error(res.error || 'Error desconocido');
     }
   } catch(e) {
     if (statusEl) statusEl.textContent = '⚠ ' + e.message;
-    toast('Error al activar: ' + e.message, 'error');
+    toast('Error: ' + e.message, 'error');
   }
 }
 
