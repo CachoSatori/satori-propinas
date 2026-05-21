@@ -1231,8 +1231,8 @@ function renderTurno() {
             <div>
               <div class="emp-field-label">Horas</div>
               <input type="number" class="emp-input-sm" id="ehrs-${emp.id}"
-                value="${l.horas !== '' && l.horas !== undefined ? l.horas : (l.activo ? (rol === 'cocina' ? (tipo === 'AM' ? 5 : 8) : 8) : '')}"
-                placeholder="${rol === 'cocina' ? (tipo === 'AM' ? '5' : '8') : '0.0'}" step="0.25" min="0" max="24"
+                value="${l.horas !== '' && l.horas !== undefined ? l.horas : (l.activo ? (tipo === 'AM' ? 5 : 8) : '')}"
+                placeholder="${tipo === 'AM' ? '5' : '8'}" step="0.25" min="0" max="24"
                 oninput="onHrsChange('${emp.id}')">
             </div>
             <div>
@@ -1250,7 +1250,8 @@ function renderTurno() {
             <div>
               <div class="emp-field-label">Horas</div>
               <input type="number" class="emp-input-sm" id="ehrs-${emp.id}"
-                value="${l.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                value="${l.horas !== '' && l.horas !== undefined ? l.horas : (l.activo && tipo === 'AM' ? 5 : '')}"
+                placeholder="${tipo === 'AM' ? '5' : '0.0'}" step="0.25" min="0" max="16"
                 oninput="onHrsChange('${emp.id}')">
             </div>
             <div>
@@ -1293,7 +1294,8 @@ function renderTurno() {
             <div>
               <div class="emp-field-label">Horas</div>
               <input type="number" class="emp-input-sm" id="ehrs-cob-${c.vId}"
-                value="${c.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                value="${c.horas !== '' && c.horas !== undefined ? c.horas : (c.activo && tipo === 'AM' ? 5 : '')}"
+                placeholder="${tipo === 'AM' ? '5' : '0.0'}" step="0.25" min="0" max="16"
                 oninput="onHrsCob('${c.vId}')">
             </div>
             <div>
@@ -1311,7 +1313,8 @@ function renderTurno() {
             <div>
               <div class="emp-field-label">Horas</div>
               <input type="number" class="emp-input-sm" id="ehrs-cob-${c.vId}"
-                value="${c.horas}" placeholder="0.0" step="0.25" min="0" max="16"
+                value="${c.horas !== '' && c.horas !== undefined ? c.horas : (c.activo && tipo === 'AM' ? 5 : '')}"
+                placeholder="${tipo === 'AM' ? '5' : '0.0'}" step="0.25" min="0" max="16"
                 oninput="onHrsCob('${c.vId}')">
             </div>
             <div>
@@ -1426,12 +1429,17 @@ function toggleEmp(id) {
   row.classList.toggle('worked', l.activo);
   if (l.activo) {
     fields.classList.remove('emp-inactive');
-    if (l.rol === 'cocina' && (l.horas === '' || l.horas === undefined)) {
+    if (l.horas === '' || l.horas === undefined) {
       const turnoTipo = document.getElementById('turno-tipo')?.value || DRAFT.turno || 'PM';
-      const defaultHrs = turnoTipo === 'AM' ? 5 : 8;
-      l.horas = defaultHrs;
-      const hrsInput = document.getElementById('ehrs-' + id);
-      if (hrsInput) hrsInput.value = defaultHrs;
+      if (turnoTipo === 'AM') {
+        l.horas = 5;
+        const hrsInput = document.getElementById('ehrs-' + id);
+        if (hrsInput) hrsInput.value = 5;
+      } else if (l.rol === 'cocina') {
+        l.horas = 8;
+        const hrsInput = document.getElementById('ehrs-' + id);
+        if (hrsInput) hrsInput.value = 8;
+      }
     }
   } else {
     fields.classList.add('emp-inactive');
@@ -1487,8 +1495,17 @@ function toggleCob(vId) {
   const row    = document.getElementById('erow-cob-' + vId);
   const fields = row.querySelector('.emp-fields-col');
   row.classList.toggle('worked', c.activo);
-  if (c.activo) fields.classList.remove('emp-inactive');
-  else { fields.classList.add('emp-inactive'); c.horas=''; c.propina_gen=''; }
+  if (c.activo) {
+    fields.classList.remove('emp-inactive');
+    if (c.horas === '' || c.horas === undefined) {
+      const turnoTipo = document.getElementById('turno-tipo')?.value || DRAFT.turno || 'PM';
+      if (turnoTipo === 'AM') {
+        c.horas = 5;
+        const hrsInput = document.getElementById('ehrs-cob-' + vId);
+        if (hrsInput) hrsInput.value = 5;
+      }
+    }
+  } else { fields.classList.add('emp-inactive'); c.horas=''; c.propina_gen=''; }
   calcTurno();
 }
 function onHrsCob(vId) {
@@ -1556,7 +1573,10 @@ function onTurnoTipoChange() {
   if (prev !== DRAFT.turno) {
     const defaultHrs = DRAFT.turno === 'AM' ? 5 : 8;
     DRAFT.lineas.forEach(l => {
-      if (l.rol === 'cocina' && l.activo) l.horas = defaultHrs;
+      if (l.activo) l.horas = defaultHrs;
+    });
+    DRAFT.coberturas.forEach(c => {
+      if (c.activo) c.horas = defaultHrs;
     });
   }
   saveDraft();
