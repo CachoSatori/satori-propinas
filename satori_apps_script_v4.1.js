@@ -1137,8 +1137,8 @@ function getDatosReporte(params) {
       diasVentas++;
       Object.entries(day.saloneros).forEach(([nombre, s]) => {
         if (s.esCajero) {
-          ventCaj += s.total    || 0;
-          ventDel += s.delivery || 0;
+          ventDel += (s.delivery || 0);
+          ventCaj += (s.total || 0) - (s.delivery || 0);
         } else {
           const k = nombre.toUpperCase().trim();
           ventSalon += s.total || 0;
@@ -1235,7 +1235,7 @@ function getDatosReporte(params) {
   return {
     ok: true, prefix,
     ventas: {
-      total:    ventSalon + ventCaj,
+      total:    ventSalon + ventCaj + ventDel,
       salon:    ventSalon,
       caja:     ventCaj,
       delivery: ventDel,
@@ -1358,7 +1358,7 @@ function _calcVentas(prefix, tz) {
       semMap[sem].dias++;
       let dayTotal = 0;
       Object.entries(day.saloneros).forEach(([nombre, s]) => {
-        if (s.esCajero) { ventCaj+=s.total||0; ventDel+=s.delivery||0; }
+        if (s.esCajero) { ventDel+=(s.delivery||0); ventCaj+=((s.total||0)-(s.delivery||0)); }
         else {
           const k = nombre.toUpperCase().trim();
           ventSalon+=s.total||0; pax+=s.pax||0; iCom+=s.iCom||0; iBeb+=s.iBeb||0;
@@ -1402,7 +1402,7 @@ function _calcVentas(prefix, tz) {
     .map(([d,v])=>({dia:d,avg:v.reduce((a,b)=>a+b,0)/v.length,count:v.length}))
     .sort((a,b)=>b.avg-a.avg);
   return {ventSalon,ventCaj,ventDel,pax,iCom,iBeb,diasVentas,topSal,semanas,diasSem,
-          ventTotal:ventSalon+ventCaj,prevVent};
+          ventTotal:ventSalon+ventCaj+ventDel,prevVent};
 }
 
 // ── Calcular propinas del mes ─────────────────────────────────────
