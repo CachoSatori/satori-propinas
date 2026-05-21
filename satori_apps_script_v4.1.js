@@ -1253,26 +1253,37 @@ function getDatosReporte(params) {
   };
 }
 
+// Envíos manuales → siempre mes actual (lo que va del mes corriente)
 function enviarReporteMensualAhora() {
   try {
-    reporteVentasMensual();
-    reportePropinaMensual();
+    const { prefix } = _prefixMesActual();
+    reporteVentasMensual(prefix);
+    reportePropinaMensual(prefix);
     return { ok: true, msg: 'Reportes de ventas y propinas enviados a satorisushibar@gmail.com' };
   } catch(e) { return { ok: false, error: e.toString() }; }
 }
 
 function enviarReporteVentasAhora() {
   try {
-    reporteVentasMensual();
+    const { prefix } = _prefixMesActual();
+    reporteVentasMensual(prefix);
     return { ok: true, msg: 'Reporte de ventas enviado a satorisushibar@gmail.com' };
   } catch(e) { return { ok: false, error: e.toString() }; }
 }
 
 function enviarReportePropinasAhora() {
   try {
-    reportePropinaMensual();
+    const { prefix } = _prefixMesActual();
+    reportePropinaMensual(prefix);
     return { ok: true, msg: 'Reporte de propinas enviado a satorisushibar@gmail.com' };
   } catch(e) { return { ok: false, error: e.toString() }; }
+}
+
+// Trigger automático día 15 → mes actual hasta esa fecha
+function reporteQuincenal() {
+  const { prefix } = _prefixMesActual();
+  reporteVentasMensual(prefix);
+  reportePropinaMensual(prefix);
 }
 
 /**
@@ -1304,15 +1315,28 @@ function reporteMensualCompleto() {
 }
 
 // ── Helpers compartidos ──────────────────────────────────────────
+const _MESES_NOM = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+
 function _prefixMesAnterior() {
   const tz  = Session.getScriptTimeZone();
   const hoy = new Date();
   const mp  = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   return {
     prefix: Utilities.formatDate(mp, tz, 'yyyy-MM'),
-    mesNombre: ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'][mp.getMonth()],
+    mesNombre: _MESES_NOM[mp.getMonth()],
     anio: mp.getFullYear(), tz
+  };
+}
+
+// Mes actual (para envíos manuales y quincenales)
+function _prefixMesActual() {
+  const tz  = Session.getScriptTimeZone();
+  const hoy = new Date();
+  return {
+    prefix: Utilities.formatDate(hoy, tz, 'yyyy-MM'),
+    mesNombre: _MESES_NOM[hoy.getMonth()],
+    anio: hoy.getFullYear(), tz
   };
 }
 function _fmt(v)  { return '₡ ' + Math.round(v).toLocaleString('es-CR'); }
@@ -1495,8 +1519,11 @@ function _calcPropinas(prefix, tz) {
 // ════════════════════════════════════════════════════════════════
 // REPORTE DE VENTAS MENSUAL
 // ════════════════════════════════════════════════════════════════
-function reporteVentasMensual() {
-  const {prefix,mesNombre,anio,tz} = _prefixMesAnterior();
+function reporteVentasMensual(prefixOverride) {
+  const {prefix,mesNombre,anio,tz} = prefixOverride ? (() => {
+    const d = new Date(prefixOverride+'-02');
+    return { prefix:prefixOverride, mesNombre:_MESES_NOM[d.getMonth()], anio:d.getFullYear(), tz:Session.getScriptTimeZone() };
+  })() : _prefixMesAnterior();
   const v = _calcVentas(prefix, tz);
   if (v.diasVentas === 0) return;
   const delta = v.prevVent > 0 ? ((v.ventTotal-v.prevVent)/v.prevVent*100).toFixed(1) : null;
@@ -1578,8 +1605,11 @@ ${(v.topComida&&v.topComida.length>0)||(v.topBebidas&&v.topBebidas.length>0)?`<h
 // ════════════════════════════════════════════════════════════════
 // REPORTE DE PROPINAS MENSUAL
 // ════════════════════════════════════════════════════════════════
-function reportePropinaMensual() {
-  const {prefix,mesNombre,anio,tz} = _prefixMesAnterior();
+function reportePropinaMensual(prefixOverride) {
+  const {prefix,mesNombre,anio,tz} = prefixOverride ? (() => {
+    const d = new Date(prefixOverride+'-02');
+    return { prefix:prefixOverride, mesNombre:_MESES_NOM[d.getMonth()], anio:d.getFullYear(), tz:Session.getScriptTimeZone() };
+  })() : _prefixMesAnterior();
   const p = _calcPropinas(prefix, tz);
   if (p.propTurnos === 0) return;
   const maxSem = p.semanas.length>0 ? Math.max(...p.semanas.map(s=>s.avg)) : 1;
