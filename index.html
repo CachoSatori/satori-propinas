@@ -511,6 +511,35 @@ header {
 .mc-bar-fill   { height:100%; background:var(--teal); border-radius:3px; }
 .mc-empty { padding:60px 20px; text-align:center; color:var(--muted); font-size:11px; }
 
+/* ── STATS ── */
+.stats-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:24px; }
+.stat-kpi { background:var(--ink); border-radius:2px; padding:16px 18px; }
+.stat-kpi-label { font-size:8px; letter-spacing:.2em; text-transform:uppercase; color:#555; margin-bottom:6px; }
+.stat-kpi-val { font-family:'Syne',sans-serif; font-size:20px; font-weight:800; color:var(--gold); line-height:1.1; }
+.stat-kpi-sub { font-size:9px; color:var(--muted); margin-top:5px; }
+.stat-section { margin-bottom:28px; }
+.stat-bar-list { display:flex; flex-direction:column; gap:9px; }
+.stat-bar-row { display:grid; grid-template-columns:110px 1fr 110px; align-items:center; gap:10px; }
+.stat-bar-label { font-size:10px; color:var(--muted); text-transform:capitalize; }
+.stat-bar-track { height:7px; background:#1a1a1a; border-radius:4px; overflow:hidden; }
+.stat-bar-fill { height:100%; border-radius:4px; background:var(--teal); transition:width .4s ease; }
+.stat-bar-fill.gold { background:var(--gold); }
+.stat-bar-val { font-size:10px; color:#c0b898; text-align:right; }
+.stat-bar-cnt { font-size:9px; color:#555; }
+.ampm-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.ampm-card { background:#0a0a0a; border:1px solid #1a1a1a; border-radius:2px; padding:14px 18px; }
+.ampm-label { font-size:8px; letter-spacing:.15em; text-transform:uppercase; color:#555; margin-bottom:8px; }
+.ampm-val { font-family:'Syne',sans-serif; font-size:20px; font-weight:800; color:var(--gold); }
+.ampm-sub { font-size:9px; color:var(--muted); margin-top:4px; }
+.stat-emp-table { width:100%; border-collapse:collapse; font-size:11px; }
+.stat-emp-table th { font-size:8px; letter-spacing:.15em; text-transform:uppercase; color:#555;
+  padding:8px 10px; text-align:left; border-bottom:1px solid #1a1a1a; }
+.stat-emp-table td { padding:9px 10px; border-bottom:1px solid #111; color:#c0b898; }
+.stat-emp-table tr:last-child td { border-bottom:none; }
+.stat-emp-name { color:#f0ece4; font-weight:700; }
+.stat-emp-take { color:var(--gold); font-weight:700; text-align:right; }
+.stat-emp-rate { color:var(--teal); text-align:right; }
+
 /* ── RESPONSIVE ── */
 @media(max-width:700px) {
   .main { padding:16px; }
@@ -540,6 +569,7 @@ header {
   <div class="nav-tab"        data-view="historial" onclick="showView('historial')">Historial</div>
   <div class="nav-tab"        data-view="resumen"   onclick="showView('resumen')">Resumen</div>
   <div class="nav-tab"        data-view="empleado"  onclick="showView('empleado')">Mi cuenta</div>
+  <div class="nav-tab"        data-view="stats"     onclick="showView('stats')">Stats</div>
   <div class="nav-tab"        data-view="admin"     onclick="showView('admin')">Admin</div>
 </div>
 
@@ -676,6 +706,27 @@ header {
     </div>
     <div id="mi-cuenta-content">
       <div class="mc-empty">Seleccioná tu nombre para ver tus estadísticas de propinas.</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════ STATS ════════════════════════════════ -->
+  <div class="view" id="view-stats">
+    <div class="filters-bar">
+      <label>Mes</label>
+      <select class="form-select" id="stats-mes" style="width:120px">
+        <option value="1">Enero</option><option value="2">Febrero</option>
+        <option value="3">Marzo</option><option value="4">Abril</option>
+        <option value="5" selected>Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option>
+        <option value="9">Setiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <label>Año</label>
+      <input type="number" class="form-input" id="stats-anio" value="2026" style="width:80px">
+      <button class="btn btn-ghost btn-sm" onclick="loadStats()">Actualizar</button>
+    </div>
+    <div id="stats-content">
+      <div class="empty">Abrí la pestaña para ver estadísticas del mes.</div>
     </div>
   </div>
 
@@ -1027,6 +1078,7 @@ function showView(name) {
   if (name === 'resumen')   loadResumen();
   if (name === 'admin')     renderAdmin();
   if (name === 'empleado')  initMiCuenta();
+  if (name === 'stats')     loadStats();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2652,6 +2704,225 @@ function toggleMiMes(safeKey) {
   const isOpen = det.style.display !== 'none';
   det.style.display = isOpen ? 'none' : '';
   if (arr) arr.textContent = isOpen ? '▶' : '▼';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ESTADÍSTICAS
+// ═══════════════════════════════════════════════════════════════
+async function loadStats() {
+  const mes  = parseInt(document.getElementById('stats-mes').value);
+  const anio = parseInt(document.getElementById('stats-anio').value);
+  const el   = document.getElementById('stats-content');
+  el.innerHTML = '<div class="empty">Calculando...</div>';
+
+  let todos = TURNOS_CACHE.map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+  if (!todos.length) {
+    try {
+      const res = await apiFetch({ action: 'getTurnosPropinas' });
+      if (res.ok) {
+        todos = (res.data || []).map(t => ({ ...t, fecha: normalizarFecha(t.fecha) }));
+        TURNOS_CACHE = todos;
+        localStorage.setItem('prop_turnos', JSON.stringify(todos));
+      }
+    } catch(e) {}
+  }
+
+  const prefix = `${anio}-${String(mes).padStart(2,'0')}`;
+  renderStats(todos.filter(t => t.fecha.startsWith(prefix)), mes, anio);
+}
+
+function _statRolColor(rol) {
+  const c = { salonero:'var(--teal)', barman:'#7e8ec8', barback:'#5a6ea8',
+               runner:'var(--gold)', cocina:'#c87a5a', cajero:'#6ea8a0', manager:'#a0a060' };
+  return c[rol] || '#666';
+}
+
+function renderStats(turnos, mes, anio) {
+  const el = document.getElementById('stats-content');
+  if (!turnos.length) {
+    el.innerHTML = '<div class="empty">Sin turnos registrados para este período.</div>';
+    return;
+  }
+  const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                  'Julio','Agosto','Setiembre','Octubre','Noviembre','Diciembre'];
+
+  // ── KPIs ──
+  const totalPool = turnos.reduce((s, t) => s + (t.datos?.pool_total || 0), 0);
+  const avgPool   = totalPool / turnos.length;
+  const maxT      = turnos.reduce((a, b) => (b.datos?.pool_total||0) > (a.datos?.pool_total||0) ? b : a);
+  const barraSum  = turnos.reduce((s, t) => s + (t.datos?.pool_barra || 0), 0);
+
+  // ── AM / PM ──
+  const amT = turnos.filter(t => (t.datos?.turno || 'PM') === 'AM');
+  const pmT = turnos.filter(t => (t.datos?.turno || 'PM') !== 'AM');
+  const avgAM = amT.length ? amT.reduce((s,t)=>s+(t.datos?.pool_total||0),0)/amT.length : 0;
+  const avgPM = pmT.length ? pmT.reduce((s,t)=>s+(t.datos?.pool_total||0),0)/pmT.length : 0;
+
+  // ── Pool por día de semana ──
+  const DIAS_ORDER = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+  const diasMap = {};
+  DIAS_ORDER.forEach(d => { diasMap[d] = { total:0, count:0 }; });
+  turnos.forEach(t => {
+    const d = (t.dia_semana||'').toLowerCase();
+    if (diasMap[d]) { diasMap[d].total += t.datos?.pool_total||0; diasMap[d].count++; }
+  });
+  const diasAvg = DIAS_ORDER
+    .filter(d => diasMap[d].count > 0)
+    .map(d => ({ dia:d, avg: diasMap[d].total/diasMap[d].count, count: diasMap[d].count }));
+  const maxDiaAvg = Math.max(...diasAvg.map(d => d.avg), 1);
+
+  // ── Tendencia por semana ──
+  const semMap = {};
+  turnos.forEach(t => {
+    const s = t.num_semana || 'S?';
+    if (!semMap[s]) semMap[s] = { total:0, count:0 };
+    semMap[s].total += t.datos?.pool_total||0;
+    semMap[s].count++;
+  });
+  const semsArr = Object.entries(semMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  const maxSem  = Math.max(...semsArr.map(([,v])=>v.total), 1);
+
+  // ── Distribución por sector ──
+  const sectMap = {};
+  turnos.forEach(t => {
+    (t.datos?.lineas||[]).forEach(l => {
+      const r = l.rol||'otro';
+      if (!sectMap[r]) sectMap[r] = 0;
+      sectMap[r] += l.take_home||0;
+    });
+  });
+  const sectTotal = Object.values(sectMap).reduce((a,b)=>a+b,0)||1;
+  const sectArr = Object.entries(sectMap)
+    .map(([rol,total]) => ({ rol, total, pct: total/sectTotal*100 }))
+    .sort((a,b)=>b.total-a.total);
+
+  // ── Top empleados ──
+  const empMap = {};
+  turnos.forEach(t => {
+    (t.datos?.lineas||[]).forEach(l => {
+      if (!l.nombre) return;
+      if (!empMap[l.nombre]) empMap[l.nombre] = { take:0, horas:0, turnos:0, rol:l.rol||'' };
+      empMap[l.nombre].take   += l.take_home||0;
+      empMap[l.nombre].horas  += l.horas||0;
+      empMap[l.nombre].turnos++;
+    });
+  });
+  const topEmps = Object.entries(empMap)
+    .map(([nombre,d]) => ({ nombre, ...d, rate: d.horas>0 ? d.take/d.horas : 0 }))
+    .sort((a,b)=>b.take-a.take);
+
+  // ── HTML ──
+  let html = `
+  <div class="stats-kpis">
+    <div class="stat-kpi">
+      <div class="stat-kpi-label">Pool total · ${MESES[mes]} ${anio}</div>
+      <div class="stat-kpi-val">${fmtCRC(totalPool)}</div>
+      <div class="stat-kpi-sub">${turnos.length} turno${turnos.length!==1?'s':''}</div>
+    </div>
+    <div class="stat-kpi">
+      <div class="stat-kpi-label">Promedio por turno</div>
+      <div class="stat-kpi-val">${fmtCRC(avgPool)}</div>
+      <div class="stat-kpi-sub">${amT.length} AM · ${pmT.length} PM</div>
+    </div>
+    <div class="stat-kpi">
+      <div class="stat-kpi-label">Mejor turno del mes</div>
+      <div class="stat-kpi-val">${fmtCRC(maxT.datos?.pool_total||0)}</div>
+      <div class="stat-kpi-sub">${maxT.fecha} · ${maxT.datos?.turno||'PM'}</div>
+    </div>
+    ${barraSum>0 ? `
+    <div class="stat-kpi">
+      <div class="stat-kpi-label">Pool barra acumulado</div>
+      <div class="stat-kpi-val">${fmtCRC(barraSum)}</div>
+      <div class="stat-kpi-sub">${Math.round(barraSum/totalPool*100)}% del pool total</div>
+    </div>` : ''}
+  </div>
+
+  <div class="stat-section">
+    <div class="sl">AM vs PM</div>
+    <div class="ampm-grid">
+      <div class="ampm-card">
+        <div class="ampm-label">Turno AM — mediodía</div>
+        <div class="ampm-val">${fmtCRC(avgAM)}</div>
+        <div class="ampm-sub">promedio · ${amT.length} turno${amT.length!==1?'s':''}</div>
+      </div>
+      <div class="ampm-card">
+        <div class="ampm-label">Turno PM — noche</div>
+        <div class="ampm-val">${fmtCRC(avgPM)}</div>
+        <div class="ampm-sub">promedio · ${pmT.length} turno${pmT.length!==1?'s':''}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-section">
+    <div class="sl">Pool promedio por día de semana</div>
+    <div class="stat-bar-list">
+      ${diasAvg.map(d => `
+        <div class="stat-bar-row">
+          <div class="stat-bar-label">${d.dia} <span class="stat-bar-cnt">(${d.count})</span></div>
+          <div class="stat-bar-track">
+            <div class="stat-bar-fill" style="width:${Math.round(d.avg/maxDiaAvg*100)}%"></div>
+          </div>
+          <div class="stat-bar-val">${fmtCRC(d.avg)}</div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="stat-section">
+    <div class="sl">Tendencia por semana</div>
+    <div class="stat-bar-list">
+      ${semsArr.map(([sem,v]) => `
+        <div class="stat-bar-row">
+          <div class="stat-bar-label">${sem} <span class="stat-bar-cnt">(${v.count}t)</span></div>
+          <div class="stat-bar-track">
+            <div class="stat-bar-fill gold" style="width:${Math.round(v.total/maxSem*100)}%"></div>
+          </div>
+          <div class="stat-bar-val">${fmtCRC(v.total)}</div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="stat-section">
+    <div class="sl">Distribución take-home por sector</div>
+    <div class="stat-bar-list">
+      ${sectArr.map(s => `
+        <div class="stat-bar-row">
+          <div class="stat-bar-label">${rolLabel(s.rol)}</div>
+          <div class="stat-bar-track">
+            <div class="stat-bar-fill" style="width:${Math.round(s.pct)}%;background:${_statRolColor(s.rol)}"></div>
+          </div>
+          <div class="stat-bar-val">${Math.round(s.pct)}%</div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="stat-section">
+    <div class="sl">Top empleados del mes</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table class="stat-emp-table">
+        <thead><tr>
+          <th>#</th><th>Empleado</th><th>Rol</th>
+          <th style="text-align:center">Turnos</th>
+          <th style="text-align:right">Horas</th>
+          <th style="text-align:right">₡/hora</th>
+          <th style="text-align:right">Total mes</th>
+        </tr></thead>
+        <tbody>
+          ${topEmps.map((e,i) => `
+            <tr>
+              <td style="color:#555;font-size:10px">${i+1}</td>
+              <td class="stat-emp-name">${e.nombre}</td>
+              <td style="color:var(--muted);font-size:10px">${rolLabel(e.rol)}</td>
+              <td style="text-align:center;color:var(--muted)">${e.turnos}</td>
+              <td style="text-align:right;color:var(--muted)">${e.horas>0 ? fmtNum(e.horas) : '—'}</td>
+              <td class="stat-emp-rate">${e.rate>0 ? fmtCRC(e.rate) : '—'}</td>
+              <td class="stat-emp-take">${fmtCRC(e.take)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════
