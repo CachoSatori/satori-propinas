@@ -2037,11 +2037,30 @@ function clearHistDia() {
 function _poblarFiltroEmpleado(turnos) {
   const sel = document.getElementById('hist-emp-filter');
   if (!sel) return;
-  const nombres = new Set();
-  turnos.forEach(t => (t.datos?.lineas || []).forEach(l => { if (l.nombre) nombres.add(l.nombre); }));
+  // Construir mapa nombre→rol desde las líneas (para excluir cocina)
+  const nameRolMap = {};
+  turnos.forEach(t => (t.datos?.lineas || []).forEach(l => {
+    if (l.nombre && !nameRolMap[l.nombre]) nameRolMap[l.nombre] = normalizarRol(l.rol) || l.rol;
+  }));
+  // Excluir cocina
+  const nombres = Object.keys(nameRolMap).filter(n => nameRolMap[n] !== 'cocina');
+  // Ordenar: activos primero, luego inactivos
+  const getActivo = n => {
+    const e = EMPLEADOS.find(x => x.nombre === n);
+    return !e || (e.activo !== false && e.activo !== 'false');
+  };
+  nombres.sort((a, b) => {
+    const aA = getActivo(a), bA = getActivo(b);
+    if (aA !== bA) return aA ? -1 : 1;
+    return a.localeCompare(b);
+  });
   const cur = sel.value;
   sel.innerHTML = '<option value="">Todos los empleados</option>' +
-    [...nombres].sort().map(n => `<option value="${n}"${n === cur ? ' selected' : ''}>${n}</option>`).join('');
+    nombres.map(n => {
+      const activo = getActivo(n);
+      const label  = activo ? n : `${n} (inactivo)`;
+      return `<option value="${n}"${n === cur ? ' selected' : ''}>${label}</option>`;
+    }).join('');
 }
 
 function renderHistorial(turnos) {
@@ -2199,6 +2218,7 @@ function renderResumen(turnos, mes, anio) {
     const isQ1 = day >= 1 && day <= 15;
     (t.datos?.lineas || []).forEach(l => {
       if (!l.nombre || !l.take_home) return;
+      if (normalizarRol(l.rol) === 'cocina') return;
       const key = l.nombre + '|' + l.rol;
       if (!byEmp[key]) byEmp[key] = {
         nombre: l.nombre, rol: l.rol, total: 0,
@@ -2241,13 +2261,25 @@ function renderResumen(turnos, mes, anio) {
       <div class="kpi-val">${new Set(_resEmpList.map(e => e.nombre)).size}</div>
     </div>`;
 
-  // Poblar filtro de empleados
+  // Poblar filtro de empleados (activos primero, luego inactivos, sin cocina)
   const sel = document.getElementById('res-emp-filter');
   if (sel) {
     const cur = sel.value;
-    const nombres = [...new Set(_resEmpList.map(e => e.nombre))].sort();
+    const getActivo = n => {
+      const e = EMPLEADOS.find(x => x.nombre === n);
+      return !e || (e.activo !== false && e.activo !== 'false');
+    };
+    const nombres = [...new Set(_resEmpList.map(e => e.nombre))].sort((a, b) => {
+      const aA = getActivo(a), bA = getActivo(b);
+      if (aA !== bA) return aA ? -1 : 1;
+      return a.localeCompare(b);
+    });
     sel.innerHTML = '<option value="">Todos los empleados</option>'
-      + nombres.map(n => `<option value="${n}"${n === cur ? ' selected' : ''}>${n}</option>`).join('');
+      + nombres.map(n => {
+        const activo = getActivo(n);
+        const label  = activo ? n : `${n} (inactivo)`;
+        return `<option value="${n}"${n === cur ? ' selected' : ''}>${label}</option>`;
+      }).join('');
   }
 
   renderResumenFiltrado();
@@ -2566,11 +2598,21 @@ function poblarSelectorEmpleado() {
   const sel = document.getElementById('emp-mi-cuenta');
   if (!sel) return;
   const prev = sel.value;
-  const activos = EMPLEADOS
-    .filter(e => e.activo !== false && e.activo !== 'false')
-    .sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
+  // Todos excepto cocina, activos primero luego inactivos
+  const todos = EMPLEADOS
+    .filter(e => normalizarRol(e.rol) !== 'cocina')
+    .sort((a, b) => {
+      const aA = a.activo !== false && a.activo !== 'false';
+      const bA = b.activo !== false && b.activo !== 'false';
+      if (aA !== bA) return aA ? -1 : 1;
+      return (a.nombre||'').localeCompare(b.nombre||'');
+    });
   sel.innerHTML = '<option value="">— Seleccioná tu nombre —</option>'
-    + activos.map(e => `<option value="${e.nombre}"${e.nombre===prev?' selected':''}>${e.nombre}</option>`).join('');
+    + todos.map(e => {
+      const activo = e.activo !== false && e.activo !== 'false';
+      const label  = activo ? e.nombre : `${e.nombre} (inactivo)`;
+      return `<option value="${e.nombre}"${e.nombre===prev?' selected':''}>${label}</option>`;
+    }).join('');
 }
 
 async function initMiCuenta() {
@@ -2886,6 +2928,7 @@ function renderStats(turnos, mes, anio) {
   const sectMap = {};
   turnos.forEach(t => {
     (t.datos?.lineas||[]).forEach(l => {
+      if (normalizarRol(l.rol) === 'cocina') return;
       const r = l.rol||'otro';
       if (!sectMap[r]) sectMap[r] = 0;
       sectMap[r] += l.take_home||0;
@@ -2901,6 +2944,7 @@ function renderStats(turnos, mes, anio) {
   turnos.forEach(t => {
     (t.datos?.lineas||[]).forEach(l => {
       if (!l.nombre) return;
+      if (normalizarRol(l.rol) === 'cocina') return;
       if (!empMap[l.nombre]) empMap[l.nombre] = { take:0, horas:0, turnos:0, rol:l.rol||'' };
       empMap[l.nombre].take   += l.take_home||0;
       empMap[l.nombre].horas  += l.horas||0;
