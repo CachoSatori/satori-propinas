@@ -112,9 +112,10 @@ function doPost(e) {
     else if (action === 'saveProductos')  result = saveProductos(params.data);
     else if (action === 'parseProductos') result = parseProductos(params.filedata, params.filename);
     // ── Módulo Caja ───────────────────────────────────────────
-    else if (action === 'saveTurno')       result = saveTurno(params.data);
-    else if (action === 'saveMovimiento')  result = saveMovimiento(params.data);
-    else if (action === 'deleteMovimiento')result = deleteMovimiento(params.id);
+    else if (action === 'saveTurno')            result = saveTurno(params.data);
+    else if (action === 'saveMovimiento')       result = saveMovimiento(params.data);
+    else if (action === 'saveMovimientosBulk')  result = saveMovimientosBulk(params.data);
+    else if (action === 'deleteMovimiento')     result = deleteMovimiento(params.id);
     else if (action === 'updateMovEstado') result = updateMovEstado(params.id, params.estado);
     else if (action === 'saveProvCaja')    result = saveProvCaja(params.data);
     else if (action === 'deleteProvCaja')  result = deleteProvCaja(params.id);
@@ -699,6 +700,39 @@ function saveMovimiento(dataStr) {
   return { ok:true, action:'created', id };
 }
 
+function saveMovimientosBulk(dataStr) {
+  initSheets();
+  const movs = JSON.parse(dataStr);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MOVS);
+  const now = new Date().toISOString();
+
+  // Clear existing data but keep header row
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 18).clearContent();
+
+  // Write all rows in one batch
+  if (movs.length > 0) {
+    const rows = movs.map(m => {
+      // Normalize fecha to YYYY-MM-DD string (prevent Sheets Date auto-conversion)
+      let fecha = m.fecha || '';
+      if (fecha instanceof Date) fecha = Utilities.formatDate(fecha, 'America/Costa_Rica', 'yyyy-MM-dd');
+      else if (typeof fecha === 'string' && fecha.length > 10) fecha = fecha.slice(0, 10);
+      return [
+        m.id, fecha, m.turno||'', m.tipo||'Egreso', m.categoria||'',
+        m.subcategoria||'', m.proveedor_id||'', m.proveedor_nombre||'',
+        m.empleado_id||'', m.empleado_nombre||'',
+        m.monto_crc||0, m.monto_usd||0, m.metodo||'',
+        m.caja_origen||'', m.estado||'Pagado',
+        m.referencia||'', m.notas||'', now
+      ];
+    });
+    // Force fecha column (col 2) as plain text to prevent Sheets date coercion
+    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('@STRING@');
+    sheet.getRange(2, 1, rows.length, 18).setValues(rows);
+  }
+  return { ok: true, count: movs.length };
+}
+
 function updateMovEstado(id, estado) {
   initSheets();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MOVS);
@@ -735,7 +769,12 @@ function getMovimientos(params) {
   const prov = params?.prov || '';
   const movs = [];
   for (let i = 1; i < rows.length; i++) {
-    const fecha = String(rows[i][1]);
+    let fecha = rows[i][1];
+    if (fecha instanceof Date) {
+      fecha = Utilities.formatDate(fecha, 'America/Costa_Rica', 'yyyy-MM-dd');
+    } else {
+      fecha = String(fecha || '').slice(0, 10);
+    }
     if (from && fecha < from) continue;
     if (to   && fecha > to)   continue;
     if (prov && String(rows[i][6]) !== prov && String(rows[i][7]) !== prov) continue;
