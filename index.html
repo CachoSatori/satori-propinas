@@ -2697,6 +2697,8 @@ function renderMiCuenta() {
   const empObj = EMPLEADOS.find(e => e.nombre === nombre);
   const rolText = empObj ? rolLabel(empObj.rol) : '';
 
+  window._miCuentaData = { nombre, byMes, meses };
+
   let html = `
     <div class="mc-hero">
       <div>
@@ -2706,6 +2708,7 @@ function renderMiCuenta() {
       <div class="mc-hero-total">
         <div class="mc-hero-total-label">Total acumulado</div>
         <div class="mc-hero-total-val">${fmtCRC(totalAcum)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="descargarMiCuentaExcel()" style="margin-top:10px;border-color:#444;color:#aaa;float:right">⬇ Exportar CSV</button>
       </div>
     </div>
 
@@ -2819,6 +2822,56 @@ function toggleMiMes(safeKey) {
   const isOpen = det.style.display !== 'none';
   det.style.display = isOpen ? 'none' : '';
   if (arr) arr.textContent = isOpen ? '▶' : '▼';
+}
+
+function descargarMiCuentaExcel() {
+  const data = window._miCuentaData;
+  if (!data) return;
+  const { nombre, byMes, meses } = data;
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = [];
+
+  rows.push([q('PROPINAS - ' + nombre)]);
+  rows.push([]);
+
+  // Resumen mensual
+  rows.push(['Mes','Días','Días Q1','Días Q2','Prom Q1 (₡)','Prom Q2 (₡)','Prom/día (₡)','Total (₡)'].map(q));
+  meses.forEach(m => {
+    const d      = byMes[m];
+    const [y,mo] = m.split('-');
+    const label  = MESES_ES[parseInt(mo)-1] + ' ' + y;
+    const q1avg  = d.q1dias > 0 ? Math.round(d.q1earn / d.q1dias) : '';
+    const q2avg  = d.q2dias > 0 ? Math.round(d.q2earn / d.q2dias) : '';
+    const avg    = d.dias   > 0 ? Math.round(d.total  / d.dias)   : '';
+    rows.push([label, d.dias, d.q1dias, d.q2dias, q1avg, q2avg, avg, d.total].map(q));
+  });
+  const tTotal = meses.reduce((s,m) => s + byMes[m].total,  0);
+  const tDias  = meses.reduce((s,m) => s + byMes[m].dias,   0);
+  const tQ1e   = meses.reduce((s,m) => s + byMes[m].q1earn, 0);
+  const tQ2e   = meses.reduce((s,m) => s + byMes[m].q2earn, 0);
+  const tQ1d   = meses.reduce((s,m) => s + byMes[m].q1dias, 0);
+  const tQ2d   = meses.reduce((s,m) => s + byMes[m].q2dias, 0);
+  rows.push(['TOTAL', tDias, tQ1d, tQ2d,
+    tQ1d  > 0 ? Math.round(tQ1e/tQ1d)   : '',
+    tQ2d  > 0 ? Math.round(tQ2e/tQ2d)   : '',
+    tDias > 0 ? Math.round(tTotal/tDias) : '',
+    tTotal].map(q));
+
+  rows.push([]);
+
+  // Detalle por turno
+  rows.push(['Fecha','Turno','Rol','Horas','Puntos','Take Home (₡)','Cobertura'].map(q));
+  meses.slice().reverse().forEach(m => {
+    byMes[m].turnos.slice().sort((a,b) => a.fecha.localeCompare(b.fecha)).forEach(t => {
+      rows.push([t.fecha, t.turno, rolLabel(t.rol), t.horas, t.pts_val, t.take_home, t.cobertura ? 'Sí' : 'No'].map(q));
+    });
+  });
+
+  const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'satori_propinas_' + nombre.replace(/\s+/g,'_').toLowerCase() + '.csv';
+  a.click();
 }
 
 // ── Enviar reporte mensual ahora ─────────────────────────────
